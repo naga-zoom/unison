@@ -46,6 +46,7 @@ module Unison.MCP.Types
     MergeToolArguments (..),
     MergeSource (..),
     ProjectCreateToolArguments (..),
+    ProjectRenameToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -131,6 +132,7 @@ data ToolKind
   | PullTool
   | MergeTool
   | ProjectCreateTool
+  | ProjectRenameTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -176,7 +178,8 @@ kindNameMapping =
       (PushTool, "push"),
       (PullTool, "pull"),
       (MergeTool, "merge"),
-      (ProjectCreateTool, "project-create")
+      (ProjectCreateTool, "project-create"),
+      (ProjectRenameTool, "project-rename")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1598,6 +1601,34 @@ instance FromJSON ProjectCreateToolArguments where
     projectName <- o .:? "projectName"
     downloadBase <- o .:? "downloadBase"
     pure $ ProjectCreateToolArguments {projectContext, projectName, downloadBase}
+
+data ProjectRenameToolArguments = ProjectRenameToolArguments
+  { projectContext :: ProjectContext,
+    newName :: Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ProjectRenameToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "newName"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description" .= ("New project name. UCM refuses if another project already has this name." :: Text)
+                  ]
+            ],
+        "required" .= (["projectContext", "newName"] :: [Text])
+      ]
+
+instance FromJSON ProjectRenameToolArguments where
+  parseJSON = withObject "ProjectRenameToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    newName <- o .: "newName"
+    pure $ ProjectRenameToolArguments {projectContext, newName}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =

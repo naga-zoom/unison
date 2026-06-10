@@ -40,6 +40,7 @@ import Unison.MCP.Tools.Find (findTool)
 import Unison.MCP.Tools.Merge (mergeTool)
 import Unison.MCP.Tools.Probe (probeTool)
 import Unison.MCP.Tools.ProjectCreate (projectCreateTool)
+import Unison.MCP.Tools.ProjectRename (projectRenameTool)
 import Unison.MCP.Tools.Pull (pullTool)
 import Unison.MCP.Tools.Push (pushTool)
 import Unison.MCP.Types
@@ -98,7 +99,8 @@ tools =
     pushTool,
     pullTool,
     mergeTool,
-    projectCreateTool
+    projectCreateTool,
+    projectRenameTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
