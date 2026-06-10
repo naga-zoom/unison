@@ -53,6 +53,11 @@ module Unison.MCP.Types
     SourceRenameToolArguments (..),
     Rename (..),
     LibRefreshToolArguments (..),
+    CrossProjectMoveToolArguments (..),
+    ReanchorToolArguments (..),
+    HashRename (..),
+    SanityFixToolArguments (..),
+    ReleaseToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -143,6 +148,10 @@ data ToolKind
   | BranchDeleteTool
   | SourceRenameTool
   | LibRefreshTool
+  | CrossProjectMoveTool
+  | ReanchorTool
+  | SanityFixTool
+  | ReleaseTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -193,7 +202,11 @@ kindNameMapping =
       (ReapTempBranchesTool, "reap-temp-branches"),
       (BranchDeleteTool, "branch-delete"),
       (SourceRenameTool, "source-rename"),
-      (LibRefreshTool, "lib-refresh")
+      (LibRefreshTool, "lib-refresh"),
+      (CrossProjectMoveTool, "cross-project-move"),
+      (ReanchorTool, "reanchor"),
+      (SanityFixTool, "sanity-fix"),
+      (ReleaseTool, "release")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1875,6 +1888,148 @@ instance FromJSON LibRefreshToolArguments where
     oldSnapshots <- fromMaybe [] <$> o .:? "oldSnapshots"
     dryRun <- o .:? "dryRun"
     pure $ LibRefreshToolArguments {projectContext, libProjectName, libBranchName, oldSnapshots, dryRun}
+
+data CrossProjectMoveToolArguments = CrossProjectMoveToolArguments
+  { srcContext :: ProjectContext,
+    srcName :: Name,
+    destContext :: ProjectContext,
+    destName :: Maybe Name,
+    dryRun :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema CrossProjectMoveToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "srcContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "srcName" .= object ["type" .= ("string" :: Text), "description" .= ("Name of the definition in src." :: Text)],
+              "destContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "destName" .= object ["type" .= ("string" :: Text), "description" .= ("Optional new name in dest; defaults to srcName." :: Text)],
+              "dryRun" .= object ["type" .= ("boolean" :: Text), "description" .= ("If true, return the plan without executing." :: Text)]
+            ],
+        "required" .= (["srcContext", "srcName", "destContext"] :: [Text])
+      ]
+
+instance FromJSON CrossProjectMoveToolArguments where
+  parseJSON = withObject "CrossProjectMoveToolArguments" $ \o -> do
+    srcContext <- o .: "srcContext"
+    srcName <- Name.unsafeParseText <$> o .: "srcName"
+    destContext <- o .: "destContext"
+    destName <- fmap Name.unsafeParseText <$> o .:? "destName"
+    dryRun <- o .:? "dryRun"
+    pure $ CrossProjectMoveToolArguments {srcContext, srcName, destContext, destName, dryRun}
+
+data HashRename = HashRename
+  { hash :: Text,
+    name :: Text
+  }
+  deriving (Eq, Show)
+
+instance FromJSON HashRename where
+  parseJSON = withObject "HashRename" $ \o -> do
+    hash <- o .: "hash"
+    name <- o .: "name"
+    pure $ HashRename {hash, name}
+
+data ReanchorToolArguments = ReanchorToolArguments
+  { projectContext :: ProjectContext,
+    names :: [Name],
+    mappings :: [HashRename]
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ReanchorToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "names"
+                .= object
+                  [ "type" .= ("array" :: Text),
+                    "items" .= object ["type" .= ("string" :: Text)],
+                    "description" .= ("Names of the definitions to render." :: Text)
+                  ],
+              "mappings"
+                .= object
+                  [ "type" .= ("array" :: Text),
+                    "items"
+                      .= object
+                        [ "type" .= ("object" :: Text),
+                          "properties"
+                            .= object
+                              [ "hash" .= object ["type" .= ("string" :: Text), "description" .= ("Hash reference to replace, e.g. `#abc123`." :: Text)],
+                                "name" .= object ["type" .= ("string" :: Text), "description" .= ("Name to substitute in place of the hash." :: Text)]
+                              ],
+                          "required" .= (["hash", "name"] :: [Text])
+                        ],
+                    "description" .= ("List of hash → name substitutions to apply to the rendered source." :: Text)
+                  ]
+            ],
+        "required" .= (["projectContext", "names", "mappings"] :: [Text])
+      ]
+
+instance FromJSON ReanchorToolArguments where
+  parseJSON = withObject "ReanchorToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    names <- fmap Name.unsafeParseText <$> o .: "names"
+    mappings <- o .: "mappings"
+    pure $ ReanchorToolArguments {projectContext, names, mappings}
+
+data SanityFixToolArguments = SanityFixToolArguments
+  { projectContext :: ProjectContext,
+    apply :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema SanityFixToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "apply" .= object ["type" .= ("boolean" :: Text), "description" .= ("If true, attempt to auto-fix misplaced constructors via move.term. Default false (report only)." :: Text)]
+            ],
+        "required" .= (["projectContext"] :: [Text])
+      ]
+
+instance FromJSON SanityFixToolArguments where
+  parseJSON = withObject "SanityFixToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    apply <- o .:? "apply"
+    pure $ SanityFixToolArguments {projectContext, apply}
+
+data ReleaseToolArguments = ReleaseToolArguments
+  { projectContext :: ProjectContext,
+    version :: Text,
+    dryRun :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ReleaseToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "version" .= object ["type" .= ("string" :: Text), "description" .= ("Semantic version for the release, e.g. \"1.0.0\". The release branch will be created at releases/<version>." :: Text)],
+              "dryRun" .= object ["type" .= ("boolean" :: Text), "description" .= ("If true, return the plan without executing. Default false." :: Text)]
+            ],
+        "required" .= (["projectContext", "version"] :: [Text])
+      ]
+
+instance FromJSON ReleaseToolArguments where
+  parseJSON = withObject "ReleaseToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    version <- o .: "version"
+    dryRun <- o .:? "dryRun"
+    pure $ ReleaseToolArguments {projectContext, version, dryRun}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
