@@ -38,6 +38,7 @@ import Unison.MCP.Tools.DetectStale (detectStaleTool)
 import Unison.MCP.Tools.Diagnose (diagnoseTool)
 import Unison.MCP.Tools.Find (findTool)
 import Unison.MCP.Tools.Probe (probeTool)
+import Unison.MCP.Tools.Push (pushTool)
 import Unison.MCP.Types
 import Unison.MCP.Wrapper
 import Unison.MCP.Wrapper qualified as MCPWrapper
@@ -90,7 +91,8 @@ tools =
     probeTool,
     detectStaleTool,
     completeUpdateTool,
-    diagnoseTool
+    diagnoseTool,
+    pushTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
