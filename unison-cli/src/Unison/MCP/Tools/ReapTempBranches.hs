@@ -23,6 +23,7 @@ import Control.Monad.Reader (asks)
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.Data (Proxy (..))
+import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import U.Codebase.Sqlite.DbId (CausalHashId, ProjectBranchId, ProjectId)
 import U.Codebase.Sqlite.Project (Project (..))
@@ -98,11 +99,12 @@ reapTempBranchesTool =
             openWorldHint = Just False
           },
       toolArgType = Proxy @ReapTempBranchesToolArguments,
-      toolHandler = \(ReapTempBranchesToolArguments {projectContext, apply, force}) -> handleToolError $ do
+      toolHandler = \(ReapTempBranchesToolArguments {projectContext, apply, force, extraPrefixes}) -> handleToolError $ do
         codebase <- asks (.codebase)
         let doApply = fromMaybe False apply
         let doForce = fromMaybe False force
-        result <- UnliftIO.liftIO $ Codebase.runTransaction codebase $ reap projectContext doApply doForce
+        let extras = fromMaybe [] extraPrefixes
+        result <- UnliftIO.liftIO $ Codebase.runTransaction codebase $ reap projectContext doApply doForce extras
         case result of
           Left err -> throwError err
           Right (cs, deletedCount) ->
@@ -121,8 +123,8 @@ reapTempBranchesTool =
 -- Implementation in a single transaction
 -- ----------------------------------------------------------------------------
 
-reap :: ProjectContext -> Bool -> Bool -> Transaction (Either Text ([Candidate], Int))
-reap projectContext doApply doForce = do
+reap :: ProjectContext -> Bool -> Bool -> [Text] -> Transaction (Either Text ([Candidate], Int))
+reap projectContext doApply doForce extras = do
   let pName = projectContext.projectName
   let bName = projectContext.branchName
   mPB <- ProjectUtils.getProjectAndBranchByNames (ProjectAndBranch pName bName)
@@ -131,11 +133,12 @@ reap projectContext doApply doForce = do
     Just (ProjectAndBranch project targetBranch) -> do
       targetHeadId <- Q.expectProjectBranchHead project.projectId targetBranch.branchId
       allBranches <- Q.loadAllProjectBranchesBeginningWith project.projectId Nothing
+      let eligible n = isTempBranchName n || any (`Text.isPrefixOf` n) extras
       let temps =
             [ (bid, bn)
             | (bid, bn) <- allBranches,
               bid /= targetBranch.branchId,
-              isTempBranchName (into @Text bn)
+              eligible (into @Text bn)
             ]
       (cs, deletedCount) <- foldM (analyzeAndMaybeDelete project.projectId targetHeadId doApply doForce) ([], 0) temps
       pure $ Right (reverse cs, deletedCount)
