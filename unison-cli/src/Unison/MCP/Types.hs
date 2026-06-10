@@ -1640,7 +1640,8 @@ instance FromJSON ProjectRenameToolArguments where
 data ReapTempBranchesToolArguments = ReapTempBranchesToolArguments
   { projectContext :: ProjectContext,
     apply :: Maybe Bool,
-    force :: Maybe Bool
+    force :: Maybe Bool,
+    extraPrefixes :: Maybe [Text]
   }
   deriving (Eq, Show)
 
@@ -1665,9 +1666,21 @@ instance HasInputSchema ReapTempBranchesToolArguments where
                 .= object
                   [ "type" .= ("boolean" :: Text),
                     "description"
-                      .= ( "Bypass the ancestor check. When true (and apply=true), every temp branch is deleted \
-                           \regardless of whether its work has been integrated. Use carefully — unintegrated \
-                           \work is lost." ::
+                      .= ( "Bypass the ancestor check. When true (and apply=true), every matching branch is \
+                           \deleted regardless of whether its work has been integrated. Use carefully — \
+                           \unintegrated work is lost." ::
+                             Text
+                         )
+                  ],
+              "extraPrefixes"
+                .= object
+                  [ "type" .= ("array" :: Text),
+                    "items" .= object ["type" .= ("string" :: Text)],
+                    "description"
+                      .= ( "Additional branch-name prefixes to consider beyond the conventional temp set \
+                           \(update-/merge-/upgrade-). Example: [\"feature-\", \"bugfix-\", \"fix-\", \"wip-\"]. \
+                           \Each candidate still goes through the ancestor check unless force=true, so \
+                           \unintegrated work is protected by default." ::
                              Text
                          )
                   ]
@@ -1680,7 +1693,8 @@ instance FromJSON ReapTempBranchesToolArguments where
     projectContext <- o .: "projectContext"
     apply <- o .:? "apply"
     force <- o .:? "force"
-    pure $ ReapTempBranchesToolArguments {projectContext, apply, force}
+    extraPrefixes <- o .:? "extraPrefixes"
+    pure $ ReapTempBranchesToolArguments {projectContext, apply, force, extraPrefixes}
 
 data BranchDeleteTarget = BranchDeleteTarget
   { project :: Maybe Text,
