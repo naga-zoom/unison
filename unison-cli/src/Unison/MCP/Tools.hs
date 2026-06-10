@@ -44,8 +44,12 @@ import Unison.MCP.Tools.ProjectCreate (projectCreateTool)
 import Unison.MCP.Tools.ProjectRename (projectRenameTool)
 import Unison.MCP.Tools.Pull (pullTool)
 import Unison.MCP.Tools.Push (pushTool)
+import Unison.MCP.Tools.CrossProjectMove (crossProjectMoveTool)
 import Unison.MCP.Tools.LibRefresh (libRefreshTool)
 import Unison.MCP.Tools.ReapTempBranches (reapTempBranchesTool)
+import Unison.MCP.Tools.Reanchor (reanchorTool)
+import Unison.MCP.Tools.Release (releaseTool)
+import Unison.MCP.Tools.SanityFix (sanityFixTool)
 import Unison.MCP.Tools.SourceRename (sourceRenameTool)
 import Unison.MCP.Types
 import Unison.MCP.Wrapper
@@ -108,7 +112,11 @@ tools =
     reapTempBranchesTool,
     branchDeleteTool,
     sourceRenameTool,
-    libRefreshTool
+    libRefreshTool,
+    crossProjectMoveTool,
+    reanchorTool,
+    sanityFixTool,
+    releaseTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
