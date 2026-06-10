@@ -50,6 +50,8 @@ module Unison.MCP.Types
     ReapTempBranchesToolArguments (..),
     BranchDeleteToolArguments (..),
     BranchDeleteTarget (..),
+    SourceRenameToolArguments (..),
+    Rename (..),
     toToolName,
     fromToolName,
   )
@@ -138,6 +140,7 @@ data ToolKind
   | ProjectRenameTool
   | ReapTempBranchesTool
   | BranchDeleteTool
+  | SourceRenameTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -186,7 +189,8 @@ kindNameMapping =
       (ProjectCreateTool, "project-create"),
       (ProjectRenameTool, "project-rename"),
       (ReapTempBranchesTool, "reap-temp-branches"),
-      (BranchDeleteTool, "branch-delete")
+      (BranchDeleteTool, "branch-delete"),
+      (SourceRenameTool, "source-rename")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1756,6 +1760,68 @@ instance FromJSON BranchDeleteToolArguments where
     target <- o .: "target"
     force <- o .:? "force"
     pure $ BranchDeleteToolArguments {projectContext, target, force}
+
+data Rename = Rename
+  { from :: Text,
+    to :: Text
+  }
+  deriving (Eq, Show)
+
+instance FromJSON Rename where
+  parseJSON = withObject "Rename" $ \o -> do
+    from <- o .: "from"
+    to <- o .: "to"
+    pure $ Rename {from, to}
+
+data SourceRenameToolArguments = SourceRenameToolArguments
+  { projectContext :: ProjectContext,
+    names :: [Name],
+    renames :: [Rename]
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema SourceRenameToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "names"
+                .= object
+                  [ "type" .= ("array" :: Text),
+                    "items"
+                      .= object
+                        [ "type" .= ("string" :: Text),
+                          "description" .= ("The names of the definitions to render." :: Text)
+                        ],
+                    "description" .= ("The names of the definitions to render." :: Text)
+                  ],
+              "renames"
+                .= object
+                  [ "type" .= ("array" :: Text),
+                    "items"
+                      .= object
+                        [ "type" .= ("object" :: Text),
+                          "properties"
+                            .= object
+                              [ "from" .= object ["type" .= ("string" :: Text), "description" .= ("Identifier to replace in the rendered source." :: Text)],
+                                "to" .= object ["type" .= ("string" :: Text), "description" .= ("Replacement identifier." :: Text)]
+                              ],
+                          "required" .= (["from", "to"] :: [Text])
+                        ],
+                    "description" .= ("Optional list of plain-text substitutions to apply to the rendered output. Use qualified or otherwise unambiguous identifiers — substitutions are not word-boundary aware." :: Text)
+                  ]
+            ],
+        "required" .= (["projectContext", "names"] :: [Text])
+      ]
+
+instance FromJSON SourceRenameToolArguments where
+  parseJSON = withObject "SourceRenameToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    names <- fmap Name.unsafeParseText <$> o .: "names"
+    renames <- fromMaybe [] <$> o .:? "renames"
+    pure $ SourceRenameToolArguments {projectContext, names, renames}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =

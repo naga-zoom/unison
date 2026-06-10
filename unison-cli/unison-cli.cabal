@@ -188,6 +188,7 @@ library
       Unison.MCP.Tools.Pull
       Unison.MCP.Tools.Push
       Unison.MCP.Tools.ReapTempBranches
+      Unison.MCP.Tools.SourceRename
       Unison.MCP.Types
       Unison.MCP.Wrapper
       Unison.Share.Codeserver
