@@ -52,6 +52,7 @@ module Unison.MCP.Types
     BranchDeleteTarget (..),
     SourceRenameToolArguments (..),
     Rename (..),
+    LibRefreshToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -141,6 +142,7 @@ data ToolKind
   | ReapTempBranchesTool
   | BranchDeleteTool
   | SourceRenameTool
+  | LibRefreshTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -190,7 +192,8 @@ kindNameMapping =
       (ProjectRenameTool, "project-rename"),
       (ReapTempBranchesTool, "reap-temp-branches"),
       (BranchDeleteTool, "branch-delete"),
-      (SourceRenameTool, "source-rename")
+      (SourceRenameTool, "source-rename"),
+      (LibRefreshTool, "lib-refresh")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1822,6 +1825,56 @@ instance FromJSON SourceRenameToolArguments where
     names <- fmap Name.unsafeParseText <$> o .: "names"
     renames <- fromMaybe [] <$> o .:? "renames"
     pure $ SourceRenameToolArguments {projectContext, names, renames}
+
+data LibRefreshToolArguments = LibRefreshToolArguments
+  { projectContext :: ProjectContext,
+    libProjectName :: Text,
+    libBranchName :: Maybe Text,
+    oldSnapshots :: [Text],
+    dryRun :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema LibRefreshToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "libProjectName"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description" .= ("Library project name to install, e.g. `@unison/base`." :: Text)
+                  ],
+              "libBranchName"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description" .= ("Optional branch/release of the library; omit for latest release." :: Text)
+                  ],
+              "oldSnapshots"
+                .= object
+                  [ "type" .= ("array" :: Text),
+                    "items" .= object ["type" .= ("string" :: Text)],
+                    "description" .= ("Names of old lib snapshots to delete AFTER the install succeeds, e.g. `[\"unison_base_1_0_0\"]`. Each is interpreted relative to `lib/`." :: Text)
+                  ],
+              "dryRun"
+                .= object
+                  [ "type" .= ("boolean" :: Text),
+                    "description" .= ("If true, echo the planned operations without executing. Default false." :: Text)
+                  ]
+            ],
+        "required" .= (["projectContext", "libProjectName"] :: [Text])
+      ]
+
+instance FromJSON LibRefreshToolArguments where
+  parseJSON = withObject "LibRefreshToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    libProjectName <- o .: "libProjectName"
+    libBranchName <- o .:? "libBranchName"
+    oldSnapshots <- fromMaybe [] <$> o .:? "oldSnapshots"
+    dryRun <- o .:? "dryRun"
+    pure $ LibRefreshToolArguments {projectContext, libProjectName, libBranchName, oldSnapshots, dryRun}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
