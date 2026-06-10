@@ -58,6 +58,11 @@ module Unison.MCP.Types
     HashRename (..),
     SanityFixToolArguments (..),
     ReleaseToolArguments (..),
+    EvalToolArguments (..),
+    ListProjectLibrariesArgs (..),
+    ListProjectBranchesArgs (..),
+    ListProjectDefinitionsArgs (..),
+    Pagination (..),
     toToolName,
     fromToolName,
   )
@@ -152,6 +157,7 @@ data ToolKind
   | ReanchorTool
   | SanityFixTool
   | ReleaseTool
+  | EvalTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -206,7 +212,8 @@ kindNameMapping =
       (CrossProjectMoveTool, "cross-project-move"),
       (ReanchorTool, "reanchor"),
       (SanityFixTool, "sanity-fix"),
-      (ReleaseTool, "release")
+      (ReleaseTool, "release"),
+      (EvalTool, "eval")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -342,7 +349,9 @@ instance FromJSON SearchDefinitionsToolArguments where
 
 data ViewDefinitionsToolArguments = ViewDefinitionsToolArguments
   { projectContext :: ProjectContext,
-    names :: [Name]
+    names :: [Name],
+    hashes :: [Text],
+    signaturesOnly :: Maybe Bool
   }
   deriving (Eq, Show)
 
@@ -359,23 +368,38 @@ instance HasInputSchema ViewDefinitionsToolArguments where
                     "items"
                       .= object
                         [ "type" .= ("string" :: Text),
-                          "description" .= ("The names of the definitions to view, e.g. `mynamespace.foo` or `lib.unison_base_1_0_0.data.List`." :: Text)
+                          "description" .= ("The names of the definitions to view, e.g. `mynamespace.foo`." :: Text)
                         ],
                     "description" .= ("The names of the definitions to view." :: Text)
+                  ],
+              "hashes"
+                .= object
+                  [ "type" .= ("array" :: Text),
+                    "items" .= object ["type" .= ("string" :: Text)],
+                    "description" .= ("Optional: view by short-hash references (e.g. `#abc123`). Resolved server-side before rendering, no separate `probe` call required." :: Text)
+                  ],
+              "signaturesOnly"
+                .= object
+                  [ "type" .= ("boolean" :: Text),
+                    "description" .= ("If true, return only type signatures (no bodies). Saves substantial tokens for large definitions. Default false." :: Text)
                   ]
             ],
-        "required" .= ["projectContext", "names" :: Text]
+        "required" .= ["projectContext" :: Text]
       ]
 
 instance FromJSON ViewDefinitionsToolArguments where
   parseJSON = withObject "ViewDefinitionsToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    names <- fmap Name.unsafeParseText <$> o .: "names"
-    pure $ ViewDefinitionsToolArguments {projectContext, names}
+    namesRaw <- o .:? "names"
+    let names = maybe [] (map Name.unsafeParseText) namesRaw
+    hashes <- fromMaybe [] <$> o .:? "hashes"
+    signaturesOnly <- o .:? "signaturesOnly"
+    pure $ ViewDefinitionsToolArguments {projectContext, names, hashes, signaturesOnly}
 
 data UpdateDefinitionsToolArguments = UpdateDefinitionsToolArguments
   { projectContext :: ProjectContext,
-    code :: Either FilePath Text
+    code :: Either FilePath Text,
+    dryRun :: Maybe Bool
   }
   deriving (Eq, Show)
 
@@ -430,7 +454,8 @@ instance FromJSON UpdateDefinitionsToolArguments where
       (_, Just sourceCode, _) -> pure (Right sourceCode)
       (_, _, Just text) -> pure (Right text)
       _ -> fail "Expected one of: code.filePath, code.sourceCode"
-    pure $ UpdateDefinitionsToolArguments {projectContext, code}
+    dryRun <- o .:? "dryRun"
+    pure $ UpdateDefinitionsToolArguments {projectContext, code, dryRun}
 
 data DiffUpdateToolArguments = DiffUpdateToolArguments
   { projectContext :: ProjectContext,
@@ -912,8 +937,7 @@ instance FromJSON DeleteDefinitionsToolArguments where
 
 data RenameDefinitionToolArguments = RenameDefinitionToolArguments
   { projectContext :: ProjectContext,
-    oldName :: Name,
-    newNameSegment :: NameSegment
+    renames :: [(Name, NameSegment)]
   }
   deriving (Eq, Show)
 
@@ -924,31 +948,48 @@ instance HasInputSchema RenameDefinitionToolArguments where
         "properties"
           .= object
             [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
-              "oldName"
+              "oldName" .= object ["type" .= ("string" :: Text), "description" .= ("Single-rename mode: the current name, e.g. `mynamespace.foo`." :: Text)],
+              "newNameSegment" .= object ["type" .= ("string" :: Text), "description" .= ("Single-rename mode: the new final segment (parent path preserved)." :: Text)],
+              "renames"
                 .= object
-                  [ "type" .= ("string" :: Text),
-                    "description" .= ("The current name of the definition to rename, e.g. `mynamespace.foo` or `MyType`." :: Text)
-                  ],
-              "newNameSegment"
-                .= object
-                  [ "type" .= ("string" :: Text),
-                    "description" .= ("The new name segment (final part only). For example, to rename `foo.bar` to `foo.baz`, provide `baz`. The parent path is preserved." :: Text)
+                  [ "type" .= ("array" :: Text),
+                    "items"
+                      .= object
+                        [ "type" .= ("object" :: Text),
+                          "properties"
+                            .= object
+                              [ "oldName" .= object ["type" .= ("string" :: Text)],
+                                "newNameSegment" .= object ["type" .= ("string" :: Text)]
+                              ],
+                          "required" .= (["oldName", "newNameSegment"] :: [Text])
+                        ],
+                    "description" .= ("Bulk-rename mode: list of {oldName, newNameSegment} pairs. Either pass `renames` OR the single-mode `oldName` + `newNameSegment` fields." :: Text)
                   ]
             ],
-        "required" .= ["projectContext", "oldName", "newNameSegment" :: Text]
+        "required" .= (["projectContext"] :: [Text])
       ]
 
 instance FromJSON RenameDefinitionToolArguments where
   parseJSON = withObject "RenameDefinitionToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    oldName <- Name.unsafeParseText <$> o .: "oldName"
-    newNameSegment <- NameSegment.unsafeParseText <$> o .: "newNameSegment"
-    pure $ RenameDefinitionToolArguments {projectContext, oldName, newNameSegment}
+    mBulk <- o .:? "renames"
+    case mBulk of
+      Just bulkObjs -> do
+        parsed <- traverse parseRename bulkObjs
+        pure $ RenameDefinitionToolArguments {projectContext, renames = parsed}
+      Nothing -> do
+        oldName <- Name.unsafeParseText <$> o .: "oldName"
+        newNameSegment <- NameSegment.unsafeParseText <$> o .: "newNameSegment"
+        pure $ RenameDefinitionToolArguments {projectContext, renames = [(oldName, newNameSegment)]}
+    where
+      parseRename = withObject "Rename pair" $ \r -> do
+        oldN <- Name.unsafeParseText <$> r .: "oldName"
+        newSeg <- NameSegment.unsafeParseText <$> r .: "newNameSegment"
+        pure (oldN, newSeg)
 
 data MoveDefinitionToolArguments = MoveDefinitionToolArguments
   { projectContext :: ProjectContext,
-    oldName :: Name,
-    newName :: Name
+    moves :: [(Name, Name)]
   }
   deriving (Eq, Show)
 
@@ -959,26 +1000,44 @@ instance HasInputSchema MoveDefinitionToolArguments where
         "properties"
           .= object
             [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
-              "oldName"
+              "oldName" .= object ["type" .= ("string" :: Text), "description" .= ("Single-move mode: current full path." :: Text)],
+              "newName" .= object ["type" .= ("string" :: Text), "description" .= ("Single-move mode: new full path (can change namespace)." :: Text)],
+              "moves"
                 .= object
-                  [ "type" .= ("string" :: Text),
-                    "description" .= ("The current full path of the definition to move, e.g. `mynamespace.foo` or `MyType`." :: Text)
-                  ],
-              "newName"
-                .= object
-                  [ "type" .= ("string" :: Text),
-                    "description" .= ("The new full path for the definition, e.g. `othernamespace.bar` or `NewType`. Can move to a different namespace." :: Text)
+                  [ "type" .= ("array" :: Text),
+                    "items"
+                      .= object
+                        [ "type" .= ("object" :: Text),
+                          "properties"
+                            .= object
+                              [ "oldName" .= object ["type" .= ("string" :: Text)],
+                                "newName" .= object ["type" .= ("string" :: Text)]
+                              ],
+                          "required" .= (["oldName", "newName"] :: [Text])
+                        ],
+                    "description" .= ("Bulk-move mode: list of {oldName, newName} pairs." :: Text)
                   ]
             ],
-        "required" .= ["projectContext", "oldName", "newName" :: Text]
+        "required" .= (["projectContext"] :: [Text])
       ]
 
 instance FromJSON MoveDefinitionToolArguments where
   parseJSON = withObject "MoveDefinitionToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    oldName <- Name.unsafeParseText <$> o .: "oldName"
-    newName <- Name.unsafeParseText <$> o .: "newName"
-    pure $ MoveDefinitionToolArguments {projectContext, oldName, newName}
+    mBulk <- o .:? "moves"
+    case mBulk of
+      Just bulkObjs -> do
+        parsed <- traverse parseMove bulkObjs
+        pure $ MoveDefinitionToolArguments {projectContext, moves = parsed}
+      Nothing -> do
+        oldName <- Name.unsafeParseText <$> o .: "oldName"
+        newName <- Name.unsafeParseText <$> o .: "newName"
+        pure $ MoveDefinitionToolArguments {projectContext, moves = [(oldName, newName)]}
+    where
+      parseMove = withObject "Move pair" $ \m -> do
+        oldN <- Name.unsafeParseText <$> m .: "oldName"
+        newN <- Name.unsafeParseText <$> m .: "newName"
+        pure (oldN, newN)
 
 data MoveToToolArguments = MoveToToolArguments
   { projectContext :: ProjectContext,
@@ -2030,6 +2089,131 @@ instance FromJSON ReleaseToolArguments where
     version <- o .: "version"
     dryRun <- o .:? "dryRun"
     pure $ ReleaseToolArguments {projectContext, version, dryRun}
+
+data EvalToolArguments = EvalToolArguments
+  { projectContext :: ProjectContext,
+    expression :: Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema EvalToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "expression"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description" .= ("A Unison expression to evaluate, e.g. `List.map (n -> n * n) [1,2,3]` or `myProject.myFunction 42`. The expression is wrapped in a `>` watch line and typechecked + evaluated in one step." :: Text)
+                  ]
+            ],
+        "required" .= (["projectContext", "expression"] :: [Text])
+      ]
+
+instance FromJSON EvalToolArguments where
+  parseJSON = withObject "EvalToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    expression <- o .: "expression"
+    pure $ EvalToolArguments {projectContext, expression}
+
+-- | Pagination cursor returned alongside a paged list.
+data Pagination = Pagination
+  { offset :: Int,
+    limit :: Int
+  }
+  deriving (Eq, Show)
+
+data ListProjectLibrariesArgs = ListProjectLibrariesArgs
+  { projectContext :: ProjectContext,
+    offset :: Maybe Int,
+    limit :: Maybe Int,
+    prefix :: Maybe Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ListProjectLibrariesArgs where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "offset" .= object ["type" .= ("integer" :: Text), "description" .= ("Zero-based offset for pagination; default 0." :: Text)],
+              "limit" .= object ["type" .= ("integer" :: Text), "description" .= ("Maximum number of libraries to return; default 100." :: Text)],
+              "prefix" .= object ["type" .= ("string" :: Text), "description" .= ("Optional name-prefix filter, e.g. `unison_base_`." :: Text)]
+            ],
+        "required" .= (["projectContext"] :: [Text])
+      ]
+
+instance FromJSON ListProjectLibrariesArgs where
+  parseJSON = withObject "ListProjectLibrariesArgs" $ \o -> do
+    projectContext <- o .: "projectContext"
+    offset <- o .:? "offset"
+    limit <- o .:? "limit"
+    prefix <- o .:? "prefix"
+    pure $ ListProjectLibrariesArgs {projectContext, offset, limit, prefix}
+
+data ListProjectBranchesArgs = ListProjectBranchesArgs
+  { projectName :: ProjectName,
+    offset :: Maybe Int,
+    limit :: Maybe Int,
+    prefix :: Maybe Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ListProjectBranchesArgs where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectName" .= object ["type" .= ("string" :: Text), "description" .= ("The project to list branches for." :: Text)],
+              "offset" .= object ["type" .= ("integer" :: Text), "description" .= ("Zero-based offset for pagination; default 0." :: Text)],
+              "limit" .= object ["type" .= ("integer" :: Text), "description" .= ("Maximum number of branches to return; default 100." :: Text)],
+              "prefix" .= object ["type" .= ("string" :: Text), "description" .= ("Optional name-prefix filter." :: Text)]
+            ],
+        "required" .= (["projectName"] :: [Text])
+      ]
+
+instance FromJSON ListProjectBranchesArgs where
+  parseJSON = withObject "ListProjectBranchesArgs" $ \o -> do
+    projectName <- UnsafeProjectName <$> o .: "projectName"
+    offset <- o .:? "offset"
+    limit <- o .:? "limit"
+    prefix <- o .:? "prefix"
+    pure $ ListProjectBranchesArgs {projectName, offset, limit, prefix}
+
+data ListProjectDefinitionsArgs = ListProjectDefinitionsArgs
+  { projectContext :: ProjectContext,
+    offset :: Maybe Int,
+    limit :: Maybe Int,
+    includeLibs :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ListProjectDefinitionsArgs where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "offset" .= object ["type" .= ("integer" :: Text), "description" .= ("Zero-based offset for pagination; default 0." :: Text)],
+              "limit" .= object ["type" .= ("integer" :: Text), "description" .= ("Maximum number of definitions to return; default 100." :: Text)],
+              "includeLibs" .= object ["type" .= ("boolean" :: Text), "description" .= ("Include definitions from lib/* in the listing. Default false." :: Text)]
+            ],
+        "required" .= (["projectContext"] :: [Text])
+      ]
+
+instance FromJSON ListProjectDefinitionsArgs where
+  parseJSON = withObject "ListProjectDefinitionsArgs" $ \o -> do
+    projectContext <- o .: "projectContext"
+    offset <- o .:? "offset"
+    limit <- o .:? "limit"
+    includeLibs <- o .:? "includeLibs"
+    pure $ ListProjectDefinitionsArgs {projectContext, offset, limit, includeLibs}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
