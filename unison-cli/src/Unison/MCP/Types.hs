@@ -43,6 +43,8 @@ module Unison.MCP.Types
     PushTarget (..),
     PullToolArguments (..),
     PullSource (..),
+    MergeToolArguments (..),
+    MergeSource (..),
     toToolName,
     fromToolName,
   )
@@ -126,6 +128,7 @@ data ToolKind
   | DiagnoseTool
   | PushTool
   | PullTool
+  | MergeTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -169,7 +172,8 @@ kindNameMapping =
       (CompleteUpdateTool, "complete-update"),
       (DiagnoseTool, "diagnose"),
       (PushTool, "push"),
-      (PullTool, "pull")
+      (PullTool, "pull"),
+      (MergeTool, "merge")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1498,6 +1502,64 @@ instance FromJSON PullToolArguments where
     source <- o .: "source"
     pullMode <- o .:? "pullMode"
     pure $ PullToolArguments {projectContext, source, pullMode}
+
+data MergeSource = MergeSource
+  { project :: Maybe Text,
+    branch :: Text
+  }
+  deriving (Eq, Show)
+
+instance FromJSON MergeSource where
+  parseJSON = withObject "MergeSource" $ \o -> do
+    project <- o .:? "project"
+    branch <- o .: "branch"
+    pure $ MergeSource {project, branch}
+
+data MergeToolArguments = MergeToolArguments
+  { projectContext :: ProjectContext,
+    source :: MergeSource
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema MergeToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "source"
+                .= object
+                  [ "type" .= ("object" :: Text),
+                    "description"
+                      .= ( "The branch to merge from. 'branch' is required; \
+                           \'project' is optional and defaults to the target's project." ::
+                             Text
+                         ),
+                    "properties"
+                      .= object
+                        [ "project"
+                            .= object
+                              [ "type" .= ("string" :: Text),
+                                "description" .= ("Optional source project name. Omit to merge from a branch in the same project." :: Text)
+                              ],
+                          "branch"
+                            .= object
+                              [ "type" .= ("string" :: Text),
+                                "description" .= ("Required source branch name." :: Text)
+                              ]
+                        ],
+                    "required" .= (["branch"] :: [Text])
+                  ]
+            ],
+        "required" .= (["projectContext", "source"] :: [Text])
+      ]
+
+instance FromJSON MergeToolArguments where
+  parseJSON = withObject "MergeToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    source <- o .: "source"
+    pure $ MergeToolArguments {projectContext, source}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =

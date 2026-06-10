@@ -37,6 +37,7 @@ import Unison.MCP.Tools.CompleteUpdate (completeUpdateTool)
 import Unison.MCP.Tools.DetectStale (detectStaleTool)
 import Unison.MCP.Tools.Diagnose (diagnoseTool)
 import Unison.MCP.Tools.Find (findTool)
+import Unison.MCP.Tools.Merge (mergeTool)
 import Unison.MCP.Tools.Probe (probeTool)
 import Unison.MCP.Tools.Pull (pullTool)
 import Unison.MCP.Tools.Push (pushTool)
@@ -94,7 +95,8 @@ tools =
     completeUpdateTool,
     diagnoseTool,
     pushTool,
-    pullTool
+    pullTool,
+    mergeTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
