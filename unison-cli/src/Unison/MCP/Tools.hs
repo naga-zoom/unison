@@ -43,6 +43,7 @@ import Unison.MCP.Tools.CompleteUpdate (completeUpdateTool)
 import Unison.MCP.Tools.DetectStale (detectStaleTool)
 import Unison.MCP.Tools.Diagnose (diagnoseTool)
 import Unison.MCP.Tools.Find (findTool)
+import Unison.MCP.Tools.FindAndAct (findAndActTool)
 import Unison.MCP.Tools.Merge (mergeTool)
 import Unison.MCP.Tools.Probe (probeTool)
 import Unison.MCP.Tools.ProjectCreate (projectCreateTool)
@@ -126,7 +127,8 @@ tools =
     sanityFixTool,
     releaseTool,
     evalTool,
-    crossProjectDependentsTool
+    crossProjectDependentsTool,
+    findAndActTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
