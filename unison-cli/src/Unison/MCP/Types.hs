@@ -59,6 +59,10 @@ module Unison.MCP.Types
     SanityFixToolArguments (..),
     ReleaseToolArguments (..),
     EvalToolArguments (..),
+    ListProjectLibrariesArgs (..),
+    ListProjectBranchesArgs (..),
+    ListProjectDefinitionsArgs (..),
+    Pagination (..),
     toToolName,
     fromToolName,
   )
@@ -2079,6 +2083,103 @@ instance FromJSON EvalToolArguments where
     projectContext <- o .: "projectContext"
     expression <- o .: "expression"
     pure $ EvalToolArguments {projectContext, expression}
+
+-- | Pagination cursor returned alongside a paged list.
+data Pagination = Pagination
+  { offset :: Int,
+    limit :: Int
+  }
+  deriving (Eq, Show)
+
+data ListProjectLibrariesArgs = ListProjectLibrariesArgs
+  { projectContext :: ProjectContext,
+    offset :: Maybe Int,
+    limit :: Maybe Int,
+    prefix :: Maybe Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ListProjectLibrariesArgs where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "offset" .= object ["type" .= ("integer" :: Text), "description" .= ("Zero-based offset for pagination; default 0." :: Text)],
+              "limit" .= object ["type" .= ("integer" :: Text), "description" .= ("Maximum number of libraries to return; default 100." :: Text)],
+              "prefix" .= object ["type" .= ("string" :: Text), "description" .= ("Optional name-prefix filter, e.g. `unison_base_`." :: Text)]
+            ],
+        "required" .= (["projectContext"] :: [Text])
+      ]
+
+instance FromJSON ListProjectLibrariesArgs where
+  parseJSON = withObject "ListProjectLibrariesArgs" $ \o -> do
+    projectContext <- o .: "projectContext"
+    offset <- o .:? "offset"
+    limit <- o .:? "limit"
+    prefix <- o .:? "prefix"
+    pure $ ListProjectLibrariesArgs {projectContext, offset, limit, prefix}
+
+data ListProjectBranchesArgs = ListProjectBranchesArgs
+  { projectName :: ProjectName,
+    offset :: Maybe Int,
+    limit :: Maybe Int,
+    prefix :: Maybe Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ListProjectBranchesArgs where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectName" .= object ["type" .= ("string" :: Text), "description" .= ("The project to list branches for." :: Text)],
+              "offset" .= object ["type" .= ("integer" :: Text), "description" .= ("Zero-based offset for pagination; default 0." :: Text)],
+              "limit" .= object ["type" .= ("integer" :: Text), "description" .= ("Maximum number of branches to return; default 100." :: Text)],
+              "prefix" .= object ["type" .= ("string" :: Text), "description" .= ("Optional name-prefix filter." :: Text)]
+            ],
+        "required" .= (["projectName"] :: [Text])
+      ]
+
+instance FromJSON ListProjectBranchesArgs where
+  parseJSON = withObject "ListProjectBranchesArgs" $ \o -> do
+    projectName <- UnsafeProjectName <$> o .: "projectName"
+    offset <- o .:? "offset"
+    limit <- o .:? "limit"
+    prefix <- o .:? "prefix"
+    pure $ ListProjectBranchesArgs {projectName, offset, limit, prefix}
+
+data ListProjectDefinitionsArgs = ListProjectDefinitionsArgs
+  { projectContext :: ProjectContext,
+    offset :: Maybe Int,
+    limit :: Maybe Int,
+    includeLibs :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ListProjectDefinitionsArgs where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "offset" .= object ["type" .= ("integer" :: Text), "description" .= ("Zero-based offset for pagination; default 0." :: Text)],
+              "limit" .= object ["type" .= ("integer" :: Text), "description" .= ("Maximum number of definitions to return; default 100." :: Text)],
+              "includeLibs" .= object ["type" .= ("boolean" :: Text), "description" .= ("Include definitions from lib/* in the listing. Default false." :: Text)]
+            ],
+        "required" .= (["projectContext"] :: [Text])
+      ]
+
+instance FromJSON ListProjectDefinitionsArgs where
+  parseJSON = withObject "ListProjectDefinitionsArgs" $ \o -> do
+    projectContext <- o .: "projectContext"
+    offset <- o .:? "offset"
+    limit <- o .:? "limit"
+    includeLibs <- o .:? "includeLibs"
+    pure $ ListProjectDefinitionsArgs {projectContext, offset, limit, includeLibs}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =

@@ -6,6 +6,9 @@ import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.Data (Proxy (..))
 import Data.List.NonEmpty qualified as NEL
+import Control.Lens ((&), (^.), (^?), ix)
+import Data.List (sortOn)
+import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -376,7 +379,11 @@ listProjectDefinitionsTool :: Tool MCP
 listProjectDefinitionsTool =
   Tool
     { toolName = toToolName ListProjectDefinitionsTool,
-      toolDescription = "List all definitions in the provided project.",
+      toolDescription =
+        "List definitions in the project. Returns structured JSON with \
+        \each definition's name + signature line. Supports pagination \
+        \(offset, limit; defaults 0 and 100). By default excludes \
+        \lib/* — pass includeLibs=true to include them.",
       toolAnnotations =
         ToolAnnotations
           { title = Just "List Project Definitions",
@@ -385,26 +392,69 @@ listProjectDefinitionsTool =
             idempotentHint = Just True,
             openWorldHint = Just False
           },
-      toolArgType = Proxy,
-      toolHandler = \(ProjectContextArgument projectContext) -> handleToolError $ do
+      toolArgType = Proxy @ListProjectDefinitionsArgs,
+      toolHandler = \(ListProjectDefinitionsArgs {projectContext, offset, limit, includeLibs}) -> handleToolError $ do
         let noop _ = pure ()
         (mb, _) <- cliToMCP projectContext noop Cli.getCurrentBranch0
         case mb of
           Nothing -> pure $ errorToolResult "No current branch found"
           Just b -> do
-            let noLibBranch = Branch.deleteLibdeps b
-            if (R.null $ Branch.deepTerms noLibBranch) && (R.null $ Branch.deepTypes noLibBranch)
-              then pure $ textToolResult "No definitions found in the project. There may be definitions within the project's installed libraries."
+            let withoutLibs = Branch.deleteLibdeps b
+            let baseBranch = if fromMaybe False includeLibs then b else withoutLibs
+            if (R.null $ Branch.deepTerms baseBranch) && (R.null $ Branch.deepTypes baseBranch)
+              then
+                pure $
+                  textToolResult $
+                    Text.decodeUtf8 . BL.toStrict $
+                      Aeson.encode $
+                        Aeson.object ["definitions" Aeson..= ([] :: [Aeson.Value]), "totalCount" Aeson..= (0 :: Int)]
               else do
                 out <- handleInputMCP projectContext [Right $ Input.FindI False (FindLocal Path.Root') []]
-                pure $ textToolResult (Text.decodeUtf8 . BL.toStrict $ Aeson.encode out)
+                let entries = parseFindOutput out.outputMessages
+                let total = length entries
+                let off = fromMaybe 0 offset
+                let lim = fromMaybe 100 limit
+                let paged = take lim (drop off entries)
+                let mkEntry (n, sig) = Aeson.object ["name" Aeson..= n, "signature" Aeson..= sig]
+                let result =
+                      Aeson.object
+                        [ "definitions" Aeson..= map mkEntry paged,
+                          "totalCount" Aeson..= total,
+                          "offset" Aeson..= off,
+                          "limit" Aeson..= lim,
+                          "nextOffset" Aeson..= if off + lim < total then Just (off + lim) else Nothing :: Maybe Int
+                        ]
+                pure $ textToolResult (Text.decodeUtf8 . BL.toStrict $ Aeson.encode result)
     }
+
+-- | Parse UCM's @find@ text output into @(name, signature)@ pairs.
+-- Lines look like @\"   1. name : Type\"@ or @\"   3. type Foo = ...\"@.
+parseFindOutput :: [Text] -> [(Text, Text)]
+parseFindOutput msgs =
+  msgs
+    & concatMap Text.lines
+    & mapMaybe parseLine
+  where
+    parseLine raw =
+      let t = Text.strip raw
+       in case Text.breakOn ". " t of
+            (num, rest) | not (Text.null rest) && Text.all isDigit num ->
+              let body = Text.drop 2 rest
+               in case Text.breakOn " : " body of
+                    (name, sig) | not (Text.null sig) -> Just (name, Text.drop 3 sig)
+                    _ -> Just (body, "") -- type decls etc. lack ` : `
+            _ -> Nothing
+    isDigit c = c >= '0' && c <= '9'
 
 listProjectLibrariesTool :: Tool MCP
 listProjectLibrariesTool =
   Tool
     { toolName = toToolName ListProjectLibrariesTool,
-      toolDescription = "List the all libraries in the provided project's lib namespace.",
+      toolDescription =
+        "List libraries in the project's lib namespace. Returns \
+        \structured JSON with name + term/type counts per snapshot. \
+        \Supports pagination (offset, limit; defaults 0 and 100) and \
+        \prefix filter.",
       toolAnnotations =
         ToolAnnotations
           { title = Just "List Project Libraries",
@@ -413,13 +463,43 @@ listProjectLibrariesTool =
             idempotentHint = Just True,
             openWorldHint = Just False
           },
-      toolArgType = Proxy,
-      toolHandler = \(ProjectContextArgument projectContext) -> handleToolError $ do
-        let libPath = Path.AbsolutePath' $ Path.Absolute (Path.fromList [NameSegment.libSegment])
-        output <- handleInputMCP projectContext [Right $ Input.FindShallowI libPath]
-        let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode output
-        pure $ textToolResult outputJSON
+      toolArgType = Proxy @ListProjectLibrariesArgs,
+      toolHandler = \(ListProjectLibrariesArgs {projectContext, offset, limit, prefix}) -> handleToolError $ do
+        let noop _ = pure ()
+        (mb, _) <- cliToMCP projectContext noop Cli.getCurrentBranch0
+        case mb of
+          Nothing -> pure $ errorToolResult "No current branch found"
+          Just b -> do
+            let allLibs = enumerateLibsWithCounts b
+            let filtered = case prefix of
+                  Just p -> filter (\(n, _, _) -> Text.isPrefixOf p n) allLibs
+                  Nothing -> allLibs
+            let total = length filtered
+            let off = fromMaybe 0 offset
+            let lim = fromMaybe 100 limit
+            let paged = take lim (drop off filtered)
+            let mkLib (n, terms, types) = Aeson.object ["name" Aeson..= n, "terms" Aeson..= terms, "types" Aeson..= types]
+            let result =
+                  Aeson.object
+                    [ "libraries" Aeson..= map mkLib paged,
+                      "totalCount" Aeson..= total,
+                      "offset" Aeson..= off,
+                      "limit" Aeson..= lim,
+                      "nextOffset" Aeson..= if off + lim < total then Just (off + lim) else Nothing :: Maybe Int
+                    ]
+            pure $ textToolResult (Text.decodeUtf8 . BL.toStrict $ Aeson.encode result)
     }
+
+-- | Walk a branch's @lib\/@ children and tally term/type counts per snapshot.
+enumerateLibsWithCounts :: Branch.Branch0 m -> [(Text, Int, Int)]
+enumerateLibsWithCounts b =
+  case b ^? Branch.children_ . ix NameSegment.libSegment . Branch.head_ of
+    Nothing -> []
+    Just libBranch ->
+      [ (NameSegment.toEscapedText seg, R.size (Branch.deepTerms childHead), R.size (Branch.deepTypes childHead))
+        | (seg, childBranchM) <- sortOn fst (Map.toList (libBranch ^. Branch.children_)),
+          let childHead = Branch.head childBranchM
+      ]
 
 listLibraryDefinitionsTool :: Tool MCP
 listLibraryDefinitionsTool =
@@ -549,7 +629,10 @@ listProjectBranchesTool :: Tool MCP
 listProjectBranchesTool =
   Tool
     { toolName = toToolName ListProjectBranchesTool,
-      toolDescription = "List all branches of a project.",
+      toolDescription =
+        "List branches of a project. Returns structured JSON with each \
+        \branch's name. Supports pagination (offset, limit; defaults 0 \
+        \and 100) and prefix filter.",
       toolAnnotations =
         ToolAnnotations
           { title = Just "List Project Branches",
@@ -558,12 +641,32 @@ listProjectBranchesTool =
             idempotentHint = Just True,
             openWorldHint = Just False
           },
-      toolArgType = Proxy,
-      toolHandler = \(ProjectNameArgument {projectName}) -> handleToolError $ do
-        projectContext <- currentProjectContext
-        branches <- handleInputMCP projectContext [Right $ Input.BranchesI (Just projectName)]
-        let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode branches
-        pure $ textToolResult outputJSON
+      toolArgType = Proxy @ListProjectBranchesArgs,
+      toolHandler = \(ListProjectBranchesArgs {projectName, offset, limit, prefix}) -> handleToolError $ do
+        codebase <- asks (.codebase)
+        mProj <- UnliftIO.liftIO $ Codebase.runTransaction codebase $ Q.loadProjectByName projectName
+        case mProj of
+          Nothing -> pure $ errorToolResult ("Project not found: " <> into @Text projectName)
+          Just project -> do
+            allBranches <- UnliftIO.liftIO $ Codebase.runTransaction codebase $
+              Q.loadAllProjectBranchesBeginningWith project.projectId Nothing
+            let names = [into @Text bn | (_, bn) <- allBranches]
+            let filtered = case prefix of
+                  Just p -> filter (Text.isPrefixOf p) names
+                  Nothing -> names
+            let total = length filtered
+            let off = fromMaybe 0 offset
+            let lim = fromMaybe 100 limit
+            let paged = take lim (drop off filtered)
+            let result =
+                  Aeson.object
+                    [ "branches" Aeson..= [Aeson.object ["name" Aeson..= n] | n <- paged],
+                      "totalCount" Aeson..= total,
+                      "offset" Aeson..= off,
+                      "limit" Aeson..= lim,
+                      "nextOffset" Aeson..= if off + lim < total then Just (off + lim) else Nothing :: Maybe Int
+                    ]
+            pure $ textToolResult (Text.decodeUtf8 . BL.toStrict $ Aeson.encode result)
     }
 
 getCurrentProjectContextTool :: Tool MCP
