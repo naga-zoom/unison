@@ -181,6 +181,7 @@ library
       Unison.MCP.Tools.Merge
       Unison.MCP.Tools.Probe
       Unison.MCP.Tools.ProjectCreate
+      Unison.MCP.Tools.ProjectRename
       Unison.MCP.Tools.Pull
       Unison.MCP.Tools.Push
       Unison.MCP.Types
