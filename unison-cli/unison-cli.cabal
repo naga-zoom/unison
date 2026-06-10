@@ -173,6 +173,7 @@ library
       Unison.MCP.Share.API
       Unison.MCP.StaticResources
       Unison.MCP.Tools
+      Unison.MCP.Tools.CompleteUpdate
       Unison.MCP.Tools.DetectStale
       Unison.MCP.Tools.Find
       Unison.MCP.Tools.Probe
@@ -394,6 +395,7 @@ test-suite cli-tests
       Unison.Test.ClearCache
       Unison.Test.Cli.Monad
       Unison.Test.LSP
+      Unison.Test.MCP.CompleteUpdate
       Unison.Test.MCP.DetectStale
       Unison.Test.MCP.Find
       Unison.Test.MCP.Pattern
