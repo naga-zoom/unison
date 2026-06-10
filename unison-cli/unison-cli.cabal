@@ -166,6 +166,7 @@ library
       Unison.Main
       Unison.MCP
       Unison.MCP.Cli
+      Unison.MCP.Domain.BranchProtection
       Unison.MCP.Domain.Pattern
       Unison.MCP.Domain.Resolution
       Unison.MCP.Domain.Structural
@@ -174,6 +175,7 @@ library
       Unison.MCP.Share.API
       Unison.MCP.StaticResources
       Unison.MCP.Tools
+      Unison.MCP.Tools.BranchDelete
       Unison.MCP.Tools.CompleteUpdate
       Unison.MCP.Tools.DetectStale
       Unison.MCP.Tools.Diagnose
@@ -403,6 +405,7 @@ test-suite cli-tests
       Unison.Test.ClearCache
       Unison.Test.Cli.Monad
       Unison.Test.LSP
+      Unison.Test.MCP.BranchProtection
       Unison.Test.MCP.CompleteUpdate
       Unison.Test.MCP.DetectStale
       Unison.Test.MCP.Diagnose
