@@ -35,6 +35,7 @@ import Unison.MCP.Share.API (ReadmeResponse (..))
 import Unison.MCP.Share.API qualified as Share
 import Unison.MCP.Tools.CompleteUpdate (completeUpdateTool)
 import Unison.MCP.Tools.DetectStale (detectStaleTool)
+import Unison.MCP.Tools.Diagnose (diagnoseTool)
 import Unison.MCP.Tools.Find (findTool)
 import Unison.MCP.Tools.Probe (probeTool)
 import Unison.MCP.Types
@@ -88,7 +89,8 @@ tools =
     findTool,
     probeTool,
     detectStaleTool,
-    completeUpdateTool
+    completeUpdateTool,
+    diagnoseTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
