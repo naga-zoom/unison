@@ -827,7 +827,12 @@ renameDefinitionTool :: Tool MCP
 renameDefinitionTool =
   Tool
     { toolName = toToolName RenameDefinitionTool,
-      toolDescription = "Rename a definition (term, type, or namespace) by changing only its final name segment. The parent path is preserved. For example, `rename foo.bar.baz Qux` changes the name `baz` to `Qux`, producing `foo.bar.Qux`. To move a definition to a different namespace, use `move-to` instead.",
+      toolDescription =
+        "Rename one or more definitions by changing only the final name \
+        \segment. Parent path preserved. Single-mode: pass oldName + \
+        \newNameSegment. Bulk-mode: pass `renames: [{oldName, \
+        \newNameSegment}, ...]` — applied in order, each in its own UCM \
+        \input. To move across namespaces use move-to.",
       toolAnnotations =
         ToolAnnotations
           { title = Just "Rename Definition",
@@ -837,9 +842,9 @@ renameDefinitionTool =
             openWorldHint = Just False
           },
       toolArgType = Proxy,
-      toolHandler = \(RenameDefinitionToolArguments {projectContext, oldName, newNameSegment}) -> handleToolError $ do
-        let src = Path.fromName' oldName
-        output <- handleInputMCP projectContext [Right $ Input.RenameI src newNameSegment]
+      toolHandler = \(RenameDefinitionToolArguments {projectContext, renames}) -> handleToolError $ do
+        let inputs = [Right $ Input.RenameI (Path.fromName' n) seg | (n, seg) <- renames]
+        output <- handleInputMCP projectContext inputs
         let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode output
         pure $ textToolResult outputJSON
     }
@@ -848,7 +853,11 @@ moveDefinitionTool :: Tool MCP
 moveDefinitionTool =
   Tool
     { toolName = toToolName MoveDefinitionTool,
-      toolDescription = "Move a definition (term, type, or namespace) to a completely new path. For example, `move foo.bar baz.qux` renames `foo.bar` to `baz.qux`. This changes the full path, not just the final segment.",
+      toolDescription =
+        "Move one or more definitions to entirely new paths. Single-mode: \
+        \pass oldName + newName. Bulk-mode: pass `moves: [{oldName, \
+        \newName}, ...]` — applied in order. Use `move-to` if you want \
+        \to drop multiple defs into the same destination namespace.",
       toolAnnotations =
         ToolAnnotations
           { title = Just "Move Definition",
@@ -858,10 +867,9 @@ moveDefinitionTool =
             openWorldHint = Just False
           },
       toolArgType = Proxy,
-      toolHandler = \(MoveDefinitionToolArguments {projectContext, oldName, newName}) -> handleToolError $ do
-        let src = Path.fromName' oldName
-            dest = Path.fromName' newName
-        output <- handleInputMCP projectContext [Right $ Input.MoveAllI src dest]
+      toolHandler = \(MoveDefinitionToolArguments {projectContext, moves}) -> handleToolError $ do
+        let inputs = [Right $ Input.MoveAllI (Path.fromName' o) (Path.fromName' n) | (o, n) <- moves]
+        output <- handleInputMCP projectContext inputs
         let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode output
         pure $ textToolResult outputJSON
     }

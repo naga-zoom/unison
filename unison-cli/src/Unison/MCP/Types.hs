@@ -937,8 +937,7 @@ instance FromJSON DeleteDefinitionsToolArguments where
 
 data RenameDefinitionToolArguments = RenameDefinitionToolArguments
   { projectContext :: ProjectContext,
-    oldName :: Name,
-    newNameSegment :: NameSegment
+    renames :: [(Name, NameSegment)]
   }
   deriving (Eq, Show)
 
@@ -949,31 +948,48 @@ instance HasInputSchema RenameDefinitionToolArguments where
         "properties"
           .= object
             [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
-              "oldName"
+              "oldName" .= object ["type" .= ("string" :: Text), "description" .= ("Single-rename mode: the current name, e.g. `mynamespace.foo`." :: Text)],
+              "newNameSegment" .= object ["type" .= ("string" :: Text), "description" .= ("Single-rename mode: the new final segment (parent path preserved)." :: Text)],
+              "renames"
                 .= object
-                  [ "type" .= ("string" :: Text),
-                    "description" .= ("The current name of the definition to rename, e.g. `mynamespace.foo` or `MyType`." :: Text)
-                  ],
-              "newNameSegment"
-                .= object
-                  [ "type" .= ("string" :: Text),
-                    "description" .= ("The new name segment (final part only). For example, to rename `foo.bar` to `foo.baz`, provide `baz`. The parent path is preserved." :: Text)
+                  [ "type" .= ("array" :: Text),
+                    "items"
+                      .= object
+                        [ "type" .= ("object" :: Text),
+                          "properties"
+                            .= object
+                              [ "oldName" .= object ["type" .= ("string" :: Text)],
+                                "newNameSegment" .= object ["type" .= ("string" :: Text)]
+                              ],
+                          "required" .= (["oldName", "newNameSegment"] :: [Text])
+                        ],
+                    "description" .= ("Bulk-rename mode: list of {oldName, newNameSegment} pairs. Either pass `renames` OR the single-mode `oldName` + `newNameSegment` fields." :: Text)
                   ]
             ],
-        "required" .= ["projectContext", "oldName", "newNameSegment" :: Text]
+        "required" .= (["projectContext"] :: [Text])
       ]
 
 instance FromJSON RenameDefinitionToolArguments where
   parseJSON = withObject "RenameDefinitionToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    oldName <- Name.unsafeParseText <$> o .: "oldName"
-    newNameSegment <- NameSegment.unsafeParseText <$> o .: "newNameSegment"
-    pure $ RenameDefinitionToolArguments {projectContext, oldName, newNameSegment}
+    mBulk <- o .:? "renames"
+    case mBulk of
+      Just bulkObjs -> do
+        parsed <- traverse parseRename bulkObjs
+        pure $ RenameDefinitionToolArguments {projectContext, renames = parsed}
+      Nothing -> do
+        oldName <- Name.unsafeParseText <$> o .: "oldName"
+        newNameSegment <- NameSegment.unsafeParseText <$> o .: "newNameSegment"
+        pure $ RenameDefinitionToolArguments {projectContext, renames = [(oldName, newNameSegment)]}
+    where
+      parseRename = withObject "Rename pair" $ \r -> do
+        oldN <- Name.unsafeParseText <$> r .: "oldName"
+        newSeg <- NameSegment.unsafeParseText <$> r .: "newNameSegment"
+        pure (oldN, newSeg)
 
 data MoveDefinitionToolArguments = MoveDefinitionToolArguments
   { projectContext :: ProjectContext,
-    oldName :: Name,
-    newName :: Name
+    moves :: [(Name, Name)]
   }
   deriving (Eq, Show)
 
@@ -984,26 +1000,44 @@ instance HasInputSchema MoveDefinitionToolArguments where
         "properties"
           .= object
             [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
-              "oldName"
+              "oldName" .= object ["type" .= ("string" :: Text), "description" .= ("Single-move mode: current full path." :: Text)],
+              "newName" .= object ["type" .= ("string" :: Text), "description" .= ("Single-move mode: new full path (can change namespace)." :: Text)],
+              "moves"
                 .= object
-                  [ "type" .= ("string" :: Text),
-                    "description" .= ("The current full path of the definition to move, e.g. `mynamespace.foo` or `MyType`." :: Text)
-                  ],
-              "newName"
-                .= object
-                  [ "type" .= ("string" :: Text),
-                    "description" .= ("The new full path for the definition, e.g. `othernamespace.bar` or `NewType`. Can move to a different namespace." :: Text)
+                  [ "type" .= ("array" :: Text),
+                    "items"
+                      .= object
+                        [ "type" .= ("object" :: Text),
+                          "properties"
+                            .= object
+                              [ "oldName" .= object ["type" .= ("string" :: Text)],
+                                "newName" .= object ["type" .= ("string" :: Text)]
+                              ],
+                          "required" .= (["oldName", "newName"] :: [Text])
+                        ],
+                    "description" .= ("Bulk-move mode: list of {oldName, newName} pairs." :: Text)
                   ]
             ],
-        "required" .= ["projectContext", "oldName", "newName" :: Text]
+        "required" .= (["projectContext"] :: [Text])
       ]
 
 instance FromJSON MoveDefinitionToolArguments where
   parseJSON = withObject "MoveDefinitionToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    oldName <- Name.unsafeParseText <$> o .: "oldName"
-    newName <- Name.unsafeParseText <$> o .: "newName"
-    pure $ MoveDefinitionToolArguments {projectContext, oldName, newName}
+    mBulk <- o .:? "moves"
+    case mBulk of
+      Just bulkObjs -> do
+        parsed <- traverse parseMove bulkObjs
+        pure $ MoveDefinitionToolArguments {projectContext, moves = parsed}
+      Nothing -> do
+        oldName <- Name.unsafeParseText <$> o .: "oldName"
+        newName <- Name.unsafeParseText <$> o .: "newName"
+        pure $ MoveDefinitionToolArguments {projectContext, moves = [(oldName, newName)]}
+    where
+      parseMove = withObject "Move pair" $ \m -> do
+        oldN <- Name.unsafeParseText <$> m .: "oldName"
+        newN <- Name.unsafeParseText <$> m .: "newName"
+        pure (oldN, newN)
 
 data MoveToToolArguments = MoveToToolArguments
   { projectContext :: ProjectContext,
