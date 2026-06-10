@@ -48,6 +48,8 @@ module Unison.MCP.Types
     ProjectCreateToolArguments (..),
     ProjectRenameToolArguments (..),
     ReapTempBranchesToolArguments (..),
+    BranchDeleteToolArguments (..),
+    BranchDeleteTarget (..),
     toToolName,
     fromToolName,
   )
@@ -135,6 +137,7 @@ data ToolKind
   | ProjectCreateTool
   | ProjectRenameTool
   | ReapTempBranchesTool
+  | BranchDeleteTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -182,7 +185,8 @@ kindNameMapping =
       (MergeTool, "merge"),
       (ProjectCreateTool, "project-create"),
       (ProjectRenameTool, "project-rename"),
-      (ReapTempBranchesTool, "reap-temp-branches")
+      (ReapTempBranchesTool, "reap-temp-branches"),
+      (BranchDeleteTool, "branch-delete")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1677,6 +1681,67 @@ instance FromJSON ReapTempBranchesToolArguments where
     apply <- o .:? "apply"
     force <- o .:? "force"
     pure $ ReapTempBranchesToolArguments {projectContext, apply, force}
+
+data BranchDeleteTarget = BranchDeleteTarget
+  { project :: Maybe Text,
+    branch :: Text
+  }
+  deriving (Eq, Show)
+
+instance FromJSON BranchDeleteTarget where
+  parseJSON = withObject "BranchDeleteTarget" $ \o -> do
+    project <- o .:? "project"
+    branch <- o .: "branch"
+    pure $ BranchDeleteTarget {project, branch}
+
+data BranchDeleteToolArguments = BranchDeleteToolArguments
+  { projectContext :: ProjectContext,
+    target :: BranchDeleteTarget,
+    force :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema BranchDeleteToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "target"
+                .= object
+                  [ "type" .= ("object" :: Text),
+                    "description" .= ("The branch to delete. 'branch' required; 'project' optional and defaults to projectContext's project." :: Text),
+                    "properties"
+                      .= object
+                        [ "project"
+                            .= object
+                              [ "type" .= ("string" :: Text),
+                                "description" .= ("Optional project name; defaults to projectContext's project." :: Text)
+                              ],
+                          "branch"
+                            .= object
+                              [ "type" .= ("string" :: Text),
+                                "description" .= ("Required branch name to delete." :: Text)
+                              ]
+                        ],
+                    "required" .= (["branch"] :: [Text])
+                  ],
+              "force"
+                .= object
+                  [ "type" .= ("boolean" :: Text),
+                    "description" .= ("Bypass the protected-branch refusal. Default false. Required to delete main, releases/*, or update-*/merge-*/upgrade-* branches." :: Text)
+                  ]
+            ],
+        "required" .= (["projectContext", "target"] :: [Text])
+      ]
+
+instance FromJSON BranchDeleteToolArguments where
+  parseJSON = withObject "BranchDeleteToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    target <- o .: "target"
+    force <- o .:? "force"
+    pure $ BranchDeleteToolArguments {projectContext, target, force}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =

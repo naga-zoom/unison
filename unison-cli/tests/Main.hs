@@ -7,6 +7,7 @@ import System.IO.CodePage (withCP65001)
 import Unison.Test.ClearCache qualified as ClearCache
 import Unison.Test.Cli.Monad qualified as Cli.Monad
 import Unison.Test.LSP qualified as LSP
+import Unison.Test.MCP.BranchProtection qualified as MCP.BranchProtection
 import Unison.Test.MCP.CompleteUpdate qualified as MCP.CompleteUpdate
 import Unison.Test.MCP.DetectStale qualified as MCP.DetectStale
 import Unison.Test.MCP.Diagnose qualified as MCP.Diagnose
@@ -22,6 +23,7 @@ test =
     [ LSP.test,
       ClearCache.test,
       Cli.Monad.test,
+      MCP.BranchProtection.test,
       MCP.CompleteUpdate.test,
       MCP.DetectStale.test,
       MCP.Diagnose.test,
