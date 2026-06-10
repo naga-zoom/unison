@@ -34,6 +34,8 @@ module Unison.MCP.Types
     CreateBranchToolArguments (..),
     CompileToolArguments (..),
     LibUpgradeToolArguments (..),
+    FindToolArguments (..),
+    ProbeToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -110,6 +112,8 @@ data ToolKind
   | CreateBranchTool
   | CompileTool
   | LibUpgradeTool
+  | FindTool
+  | ProbeTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -146,7 +150,9 @@ kindNameMapping =
       (HistoryTool, "history"),
       (CreateBranchTool, "create-branch"),
       (CompileTool, "compile"),
-      (LibUpgradeTool, "lib-upgrade")
+      (LibUpgradeTool, "lib-upgrade"),
+      (FindTool, "find"),
+      (ProbeTool, "probe")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1208,6 +1214,72 @@ instance FromJSON LibUpgradeToolArguments where
     oldLibName <- o .: "oldLibName"
     newLibName <- o .: "newLibName"
     pure $ LibUpgradeToolArguments {projectContext, oldLibName, newLibName}
+
+data FindToolArguments = FindToolArguments
+  { projectContext :: ProjectContext,
+    query :: Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema FindToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "query"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description"
+                      .= ( "Pattern DSL query. Supports kind:term|type|ctor|doc|test|ability, "
+                             <> "name:NAME (with * and ? globs, =EXACT, or bare token for contains), "
+                             <> "project:NAME, owner:NAME, Boolean composition (AND OR NOT), and parens. "
+                             <> "Examples: 'kind:term AND name:List.*'  -- 'kind:type OR (kind:ctor AND NOT name:lib.*)'." ::
+                             Text
+                         )
+                  ]
+            ],
+        "required" .= (["projectContext", "query"] :: [Text])
+      ]
+
+instance FromJSON FindToolArguments where
+  parseJSON = withObject "FindToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    query <- o .: "query"
+    pure $ FindToolArguments {projectContext, query}
+
+data ProbeToolArguments = ProbeToolArguments
+  { projectContext :: ProjectContext,
+    hash :: Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ProbeToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "hash"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description"
+                      .= ( "A short hash to resolve, e.g. '#abc123'. Leading '#' is required; "
+                             <> "cycle/cid suffixes (e.g. '#abc.1.2') are accepted." ::
+                             Text
+                         )
+                  ]
+            ],
+        "required" .= (["projectContext", "hash"] :: [Text])
+      ]
+
+instance FromJSON ProbeToolArguments where
+  parseJSON = withObject "ProbeToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    hash <- o .: "hash"
+    pure $ ProbeToolArguments {projectContext, hash}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =

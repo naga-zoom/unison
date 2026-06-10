@@ -22,9 +22,11 @@ module Unison.MCP.Wrapper
     errorToolResult,
     textToolResult,
     jsonToolResult,
+    handleToolError,
   )
 where
 
+import Control.Monad.Trans.Except (ExceptT, runExceptT)
 import Data.Aeson (FromJSON)
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy.Char8 qualified as BL
@@ -183,3 +185,14 @@ textToolResult msg =
 
 jsonToolResult :: (Aeson.ToJSON a) => a -> MCP.CallToolResult
 jsonToolResult msg = textToolResult $ Text.pack $ BL.unpack $ Aeson.encode msg
+
+-- | Run an MCP tool body that may short-circuit with a typed error
+-- ('ExceptT Text'), converting a 'Left' into 'errorToolResult'. The monad
+-- is left generic so per-file tool modules can use this regardless of which
+-- specific MCP monad they live in.
+handleToolError :: (Monad m) => ExceptT Text m MCP.CallToolResult -> m MCP.CallToolResult
+handleToolError action = do
+  result <- runExceptT action
+  case result of
+    Left err -> pure $ errorToolResult err
+    Right res -> pure res
