@@ -36,6 +36,7 @@ module Unison.MCP.Types
     LibUpgradeToolArguments (..),
     FindToolArguments (..),
     ProbeToolArguments (..),
+    DetectStaleToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -114,6 +115,7 @@ data ToolKind
   | LibUpgradeTool
   | FindTool
   | ProbeTool
+  | DetectStaleTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -152,7 +154,8 @@ kindNameMapping =
       (CompileTool, "compile"),
       (LibUpgradeTool, "lib-upgrade"),
       (FindTool, "find"),
-      (ProbeTool, "probe")
+      (ProbeTool, "probe"),
+      (DetectStaleTool, "detect-stale")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1280,6 +1283,27 @@ instance FromJSON ProbeToolArguments where
     projectContext <- o .: "projectContext"
     hash <- o .: "hash"
     pure $ ProbeToolArguments {projectContext, hash}
+
+newtype DetectStaleToolArguments = DetectStaleToolArguments
+  { projectContext :: ProjectContext
+  }
+  deriving newtype (Eq, Show)
+
+instance HasInputSchema DetectStaleToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext)
+            ],
+        "required" .= (["projectContext"] :: [Text])
+      ]
+
+instance FromJSON DetectStaleToolArguments where
+  parseJSON = withObject "DetectStaleToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    pure $ DetectStaleToolArguments {projectContext}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
