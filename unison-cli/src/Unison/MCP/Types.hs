@@ -342,7 +342,9 @@ instance FromJSON SearchDefinitionsToolArguments where
 
 data ViewDefinitionsToolArguments = ViewDefinitionsToolArguments
   { projectContext :: ProjectContext,
-    names :: [Name]
+    names :: [Name],
+    hashes :: [Text],
+    signaturesOnly :: Maybe Bool
   }
   deriving (Eq, Show)
 
@@ -359,19 +361,33 @@ instance HasInputSchema ViewDefinitionsToolArguments where
                     "items"
                       .= object
                         [ "type" .= ("string" :: Text),
-                          "description" .= ("The names of the definitions to view, e.g. `mynamespace.foo` or `lib.unison_base_1_0_0.data.List`." :: Text)
+                          "description" .= ("The names of the definitions to view, e.g. `mynamespace.foo`." :: Text)
                         ],
                     "description" .= ("The names of the definitions to view." :: Text)
+                  ],
+              "hashes"
+                .= object
+                  [ "type" .= ("array" :: Text),
+                    "items" .= object ["type" .= ("string" :: Text)],
+                    "description" .= ("Optional: view by short-hash references (e.g. `#abc123`). Resolved server-side before rendering, no separate `probe` call required." :: Text)
+                  ],
+              "signaturesOnly"
+                .= object
+                  [ "type" .= ("boolean" :: Text),
+                    "description" .= ("If true, return only type signatures (no bodies). Saves substantial tokens for large definitions. Default false." :: Text)
                   ]
             ],
-        "required" .= ["projectContext", "names" :: Text]
+        "required" .= ["projectContext" :: Text]
       ]
 
 instance FromJSON ViewDefinitionsToolArguments where
   parseJSON = withObject "ViewDefinitionsToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    names <- fmap Name.unsafeParseText <$> o .: "names"
-    pure $ ViewDefinitionsToolArguments {projectContext, names}
+    namesRaw <- o .:? "names"
+    let names = maybe [] (map Name.unsafeParseText) namesRaw
+    hashes <- fromMaybe [] <$> o .:? "hashes"
+    signaturesOnly <- o .:? "signaturesOnly"
+    pure $ ViewDefinitionsToolArguments {projectContext, names, hashes, signaturesOnly}
 
 data UpdateDefinitionsToolArguments = UpdateDefinitionsToolArguments
   { projectContext :: ProjectContext,

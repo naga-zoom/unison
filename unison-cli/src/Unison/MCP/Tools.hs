@@ -6,6 +6,7 @@ import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.Data (Proxy (..))
 import Data.List.NonEmpty qualified as NEL
+import Data.Maybe (mapMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
@@ -30,7 +31,8 @@ import Unison.Codebase.ShortCausalHash qualified as SCH
 import Unison.Core.Project (ProjectBranchName (..), ProjectName (..))
 import Unison.HashQualified qualified as HQ
 import Unison.HashQualifiedPrime qualified as HQ'
-import Unison.MCP.Cli (cliToMCP, handleInputMCP, virtualSourceName)
+import Unison.ShortHash qualified as SH
+import Unison.MCP.Cli (CliOutput (..), cliToMCP, handleInputMCP, virtualSourceName)
 import Unison.MCP.Share.API (ReadmeResponse (..))
 import Unison.MCP.Share.API qualified as Share
 import Unison.MCP.Tools.BranchDelete (branchDeleteTool)
@@ -415,7 +417,7 @@ viewDefinitionsTool :: Tool MCP
 viewDefinitionsTool =
   Tool
     { toolName = toToolName ViewDefinitionsTool,
-      toolDescription = "View the source code of the specified definitions. Definitions inside a library must be prefixed by their full library prefix, e.g. `lib.unison_base_1_0_0.data.List`",
+      toolDescription = "View source for definitions. Accepts `names` (e.g. `mynamespace.foo`) and/or `hashes` (e.g. `#abc123`) — either or both. Pass `signaturesOnly=true` to get just type signatures (saves tokens on large bodies).",
       toolAnnotations =
         ToolAnnotations
           { title = Just "View Definitions",
@@ -425,16 +427,29 @@ viewDefinitionsTool =
             openWorldHint = Just False
           },
       toolArgType = Proxy,
-      toolHandler = \(ViewDefinitionsToolArguments {projectContext, names}) -> handleToolError $ do
-        case NEL.nonEmpty names of
+      toolHandler = \(ViewDefinitionsToolArguments {projectContext, names, hashes, signaturesOnly}) -> handleToolError $ do
+        let parsedHashes = mapMaybe (fmap HQ.HashOnly . SH.fromText) hashes
+        let nameQs = HQ.NameOnly <$> names
+        case NEL.nonEmpty (nameQs <> parsedHashes) of
           Nothing ->
-            pure $ errorToolResult "No names provided to view definitions"
-          Just nonEmptyNames -> do
-            let names' = HQ.NameOnly <$> nonEmptyNames
-            definitions <- handleInputMCP projectContext [Right $ Input.ShowDefinitionI Input.ConsoleLocation Input.ShowDefinitionLocal names']
-            let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode definitions
+            pure $ errorToolResult "No names or hashes provided to view"
+          Just nonEmpty -> do
+            definitions <- handleInputMCP projectContext [Right $ Input.ShowDefinitionI Input.ConsoleLocation Input.ShowDefinitionLocal nonEmpty]
+            let trimmed = if fromMaybe False signaturesOnly then trimToSignatures definitions else definitions
+            let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode trimmed
             pure $ textToolResult outputJSON
     }
+
+trimToSignatures :: CliOutput -> CliOutput
+trimToSignatures out =
+  out {outputMessages = map signatureOnly out.outputMessages}
+  where
+    signatureOnly :: Text -> Text
+    signatureOnly = Text.unlines . filter isSig . Text.lines
+    isSig line =
+      let s = Text.stripStart line
+       in " : " `Text.isInfixOf` line
+            || any (`Text.isPrefixOf` s) ["type ", "unique type ", "structural type ", "ability ", "unique ability ", "structural ability "]
 
 updateTool :: Tool MCP
 updateTool =
