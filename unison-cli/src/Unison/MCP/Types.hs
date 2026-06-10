@@ -64,6 +64,8 @@ module Unison.MCP.Types
     ListProjectDefinitionsArgs (..),
     Pagination (..),
     CrossProjectDependentsToolArguments (..),
+    FindAndActToolArguments (..),
+    FindAction (..),
     toToolName,
     fromToolName,
   )
@@ -71,6 +73,7 @@ where
 
 import Control.Monad.Reader (MonadReader, ReaderT (..))
 import Data.Aeson
+import Data.Aeson.Types (Parser)
 import Data.Map qualified as Map
 import Data.Proxy (Proxy (..))
 import Data.Text qualified as Text
@@ -160,6 +163,7 @@ data ToolKind
   | ReleaseTool
   | EvalTool
   | CrossProjectDependentsTool
+  | FindAndActTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -216,7 +220,8 @@ kindNameMapping =
       (SanityFixTool, "sanity-fix"),
       (ReleaseTool, "release"),
       (EvalTool, "eval"),
-      (CrossProjectDependentsTool, "cross-project-dependents")
+      (CrossProjectDependentsTool, "cross-project-dependents"),
+      (FindAndActTool, "find-and-act")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -2264,6 +2269,61 @@ instance FromJSON CrossProjectDependentsToolArguments where
     projects <- o .:? "projects"
     branchName <- o .:? "branchName"
     pure $ CrossProjectDependentsToolArguments {definitionName, projects, branchName}
+
+data FindAction
+  = FindActionDelete
+  | FindActionMoveTo Name
+  deriving (Eq, Show)
+
+instance FromJSON FindAction where
+  parseJSON = withObject "FindAction" $ \o -> do
+    typ <- o .: "type" :: Parser Text
+    case typ of
+      "delete" -> pure FindActionDelete
+      "move-to" -> do
+        dst <- Name.unsafeParseText <$> o .: "destNamespace"
+        pure (FindActionMoveTo dst)
+      other -> fail $ "Unknown find-and-act action type: " <> Text.unpack other
+
+data FindAndActToolArguments = FindAndActToolArguments
+  { projectContext :: ProjectContext,
+    query :: Text,
+    action :: FindAction,
+    dryRun :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema FindAndActToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "query" .= object ["type" .= ("string" :: Text), "description" .= ("Pattern DSL query, same syntax as `find`." :: Text)],
+              "action"
+                .= object
+                  [ "type" .= ("object" :: Text),
+                    "description" .= ("Action to apply to each match. Either {type: \"delete\"} or {type: \"move-to\", destNamespace: \"foo.bar\"}." :: Text),
+                    "properties"
+                      .= object
+                        [ "type" .= object ["type" .= ("string" :: Text), "enum" .= (["delete", "move-to"] :: [Text])],
+                          "destNamespace" .= object ["type" .= ("string" :: Text)]
+                        ],
+                    "required" .= (["type"] :: [Text])
+                  ],
+              "dryRun" .= object ["type" .= ("boolean" :: Text), "description" .= ("Default true. Pass false to actually perform the action on every match." :: Text)]
+            ],
+        "required" .= (["projectContext", "query", "action"] :: [Text])
+      ]
+
+instance FromJSON FindAndActToolArguments where
+  parseJSON = withObject "FindAndActToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    query <- o .: "query"
+    action <- o .: "action"
+    dryRun <- o .:? "dryRun"
+    pure $ FindAndActToolArguments {projectContext, query, action, dryRun}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
