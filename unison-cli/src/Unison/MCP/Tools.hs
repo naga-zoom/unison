@@ -49,6 +49,7 @@ import Unison.MCP.Tools.ProjectCreate (projectCreateTool)
 import Unison.MCP.Tools.ProjectRename (projectRenameTool)
 import Unison.MCP.Tools.Pull (pullTool)
 import Unison.MCP.Tools.Push (pushTool)
+import Unison.MCP.Tools.CrossProjectDependents (crossProjectDependentsTool)
 import Unison.MCP.Tools.CrossProjectMove (crossProjectMoveTool)
 import Unison.MCP.Tools.LibRefresh (libRefreshTool)
 import Unison.MCP.Tools.ReapTempBranches (reapTempBranchesTool)
@@ -59,7 +60,9 @@ import Unison.MCP.Tools.SourceRename (sourceRenameTool)
 import Unison.MCP.Types
 import Unison.MCP.Wrapper
 import Unison.MCP.Wrapper qualified as MCPWrapper
+import Unison.Name (Name)
 import Unison.NameSegment qualified as NameSegment
+import Unison.Syntax.Name qualified as Name
 import Unison.Prelude (fromMaybe, into, readUtf8)
 import Unison.Project (ProjectBranchNameOrLatestRelease (..))
 import Unison.Syntax.NameSegment qualified as NameSegment
@@ -122,7 +125,8 @@ tools =
     reanchorTool,
     sanityFixTool,
     releaseTool,
-    evalTool
+    evalTool,
+    crossProjectDependentsTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
@@ -536,18 +540,49 @@ viewDefinitionsTool =
             openWorldHint = Just False
           },
       toolArgType = Proxy,
-      toolHandler = \(ViewDefinitionsToolArguments {projectContext, names, hashes, signaturesOnly}) -> handleToolError $ do
+      toolHandler = \(ViewDefinitionsToolArguments {projectContext, names, hashes, signaturesOnly, withDirectDeps}) -> handleToolError $ do
         let parsedHashes = mapMaybe (fmap HQ.HashOnly . SH.fromText) hashes
         let nameQs = HQ.NameOnly <$> names
         case NEL.nonEmpty (nameQs <> parsedHashes) of
           Nothing ->
             pure $ errorToolResult "No names or hashes provided to view"
           Just nonEmpty -> do
-            definitions <- handleInputMCP projectContext [Right $ Input.ShowDefinitionI Input.ConsoleLocation Input.ShowDefinitionLocal nonEmpty]
-            let trimmed = if fromMaybe False signaturesOnly then trimToSignatures definitions else definitions
+            mainDefs <- handleInputMCP projectContext [Right $ Input.ShowDefinitionI Input.ConsoleLocation Input.ShowDefinitionLocal nonEmpty]
+            depsRendered <-
+              case fromMaybe False withDirectDeps of
+                False -> pure mempty
+                True -> do
+                  let depInputs = [Right (Input.ListDependenciesI q) | q <- NEL.toList nonEmpty]
+                  depsRaw <- handleInputMCP projectContext depInputs
+                  let depNames = mapMaybe parseDepName (concatMap Text.lines depsRaw.outputMessages)
+                  case NEL.nonEmpty (HQ.NameOnly <$> depNames) of
+                    Nothing -> pure mempty
+                    Just depNonEmpty ->
+                      handleInputMCP projectContext [Right $ Input.ShowDefinitionI Input.ConsoleLocation Input.ShowDefinitionLocal depNonEmpty]
+            let combined = mainDefs <> depsRendered
+            let trimmed = if fromMaybe False signaturesOnly then trimToSignatures combined else combined
             let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode trimmed
             pure $ textToolResult outputJSON
     }
+
+-- | Parse one rendered ListDependenciesI line into a Name, if it carries one.
+-- The rendered text looks like @"  1. some.qualified.Name"@ for terms and
+-- @"  1. type X"@ for types — both forms are extracted.
+parseDepName :: Text -> Maybe Name
+parseDepName raw =
+  let t = Text.strip raw
+      withoutNum = case Text.breakOn ". " t of
+        (num, rest) | not (Text.null rest) && Text.all (\c -> c >= '0' && c <= '9') num ->
+          Text.stripStart (Text.drop 2 rest)
+        _ -> t
+      candidate = case Text.stripPrefix "type " withoutNum of
+        Just rest -> Text.stripStart rest
+        Nothing -> case Text.stripPrefix "ability " withoutNum of
+          Just rest -> Text.stripStart rest
+          Nothing -> withoutNum
+   in case Name.parseTextEither candidate of
+        Right n -> Just n
+        Left _ -> Nothing
 
 trimToSignatures :: CliOutput -> CliOutput
 trimToSignatures out =
