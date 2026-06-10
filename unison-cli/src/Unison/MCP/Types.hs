@@ -47,6 +47,7 @@ module Unison.MCP.Types
     MergeSource (..),
     ProjectCreateToolArguments (..),
     ProjectRenameToolArguments (..),
+    ReapTempBranchesToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -133,6 +134,7 @@ data ToolKind
   | MergeTool
   | ProjectCreateTool
   | ProjectRenameTool
+  | ReapTempBranchesTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -179,7 +181,8 @@ kindNameMapping =
       (PullTool, "pull"),
       (MergeTool, "merge"),
       (ProjectCreateTool, "project-create"),
-      (ProjectRenameTool, "project-rename")
+      (ProjectRenameTool, "project-rename"),
+      (ReapTempBranchesTool, "reap-temp-branches")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1629,6 +1632,51 @@ instance FromJSON ProjectRenameToolArguments where
     projectContext <- o .: "projectContext"
     newName <- o .: "newName"
     pure $ ProjectRenameToolArguments {projectContext, newName}
+
+data ReapTempBranchesToolArguments = ReapTempBranchesToolArguments
+  { projectContext :: ProjectContext,
+    apply :: Maybe Bool,
+    force :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ReapTempBranchesToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "apply"
+                .= object
+                  [ "type" .= ("boolean" :: Text),
+                    "description"
+                      .= ( "Whether to actually delete the safe candidates. Default false (dry-run): \
+                           \just reports which temp branches would be deleted. \
+                           \When true, deletes branches whose head is an ancestor of the target's head." ::
+                             Text
+                         )
+                  ],
+              "force"
+                .= object
+                  [ "type" .= ("boolean" :: Text),
+                    "description"
+                      .= ( "Bypass the ancestor check. When true (and apply=true), every temp branch is deleted \
+                           \regardless of whether its work has been integrated. Use carefully — unintegrated \
+                           \work is lost." ::
+                             Text
+                         )
+                  ]
+            ],
+        "required" .= (["projectContext"] :: [Text])
+      ]
+
+instance FromJSON ReapTempBranchesToolArguments where
+  parseJSON = withObject "ReapTempBranchesToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    apply <- o .:? "apply"
+    force <- o .:? "force"
+    pure $ ReapTempBranchesToolArguments {projectContext, apply, force}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =

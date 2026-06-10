@@ -43,6 +43,7 @@ import Unison.MCP.Tools.ProjectCreate (projectCreateTool)
 import Unison.MCP.Tools.ProjectRename (projectRenameTool)
 import Unison.MCP.Tools.Pull (pullTool)
 import Unison.MCP.Tools.Push (pushTool)
+import Unison.MCP.Tools.ReapTempBranches (reapTempBranchesTool)
 import Unison.MCP.Types
 import Unison.MCP.Wrapper
 import Unison.MCP.Wrapper qualified as MCPWrapper
@@ -100,7 +101,8 @@ tools =
     pullTool,
     mergeTool,
     projectCreateTool,
-    projectRenameTool
+    projectRenameTool,
+    reapTempBranchesTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
