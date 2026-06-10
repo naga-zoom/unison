@@ -2,7 +2,6 @@ module Unison.MCP.Tools (tools) where
 
 import Control.Monad.Except (ExceptT, throwError)
 import Control.Monad.Reader
-import Control.Monad.Trans.Except (runExceptT)
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.Data (Proxy (..))
@@ -34,6 +33,7 @@ import Unison.HashQualifiedPrime qualified as HQ'
 import Unison.MCP.Cli (cliToMCP, handleInputMCP, virtualSourceName)
 import Unison.MCP.Share.API (ReadmeResponse (..))
 import Unison.MCP.Share.API qualified as Share
+import Unison.MCP.Tools.Find (findTool)
 import Unison.MCP.Types
 import Unison.MCP.Wrapper
 import Unison.MCP.Wrapper qualified as MCPWrapper
@@ -79,7 +79,8 @@ tools =
     deleteNamespaceTool,
     reflogTool,
     historyTool,
-    createBranchTool
+    createBranchTool,
+    findTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
@@ -601,13 +602,6 @@ runTestsTool =
         let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode output
         pure $ textToolResult outputJSON
     }
-
-handleToolError :: EMCP CallToolResult -> MCP CallToolResult
-handleToolError action = do
-  result <- runExceptT action
-  case result of
-    Left err -> pure $ errorToolResult err
-    Right res -> pure res
 
 deleteDefinitionsTool :: Tool MCP
 deleteDefinitionsTool =

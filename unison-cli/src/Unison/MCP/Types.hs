@@ -32,6 +32,7 @@ module Unison.MCP.Types
     ReflogToolArguments (..),
     HistoryToolArguments (..),
     CreateBranchToolArguments (..),
+    FindToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -106,6 +107,7 @@ data ToolKind
   | ReflogTool
   | HistoryTool
   | CreateBranchTool
+  | FindTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -140,7 +142,8 @@ kindNameMapping =
       (DiffUpdateTool, "diff-update"),
       (ReflogTool, "reflog"),
       (HistoryTool, "history"),
-      (CreateBranchTool, "create-branch")
+      (CreateBranchTool, "create-branch"),
+      (FindTool, "find")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1100,6 +1103,40 @@ instance FromJSON CreateBranchToolArguments where
     sourceBranchProject <- fmap UnsafeProjectName <$> o .:? "sourceBranchProject"
     sourceBranchName <- fmap UnsafeProjectBranchName <$> o .:? "sourceBranchName"
     pure $ CreateBranchToolArguments {projectName, newBranchName, sourceType, sourceBranchProject, sourceBranchName}
+
+data FindToolArguments = FindToolArguments
+  { projectContext :: ProjectContext,
+    query :: Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema FindToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "query"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description"
+                      .= ( "Pattern DSL query. Supports kind:term|type|ctor|doc|test|ability, "
+                             <> "name:NAME (with * and ? globs, =EXACT, or bare token for contains), "
+                             <> "project:NAME, owner:NAME, Boolean composition (AND OR NOT), and parens. "
+                             <> "Examples: 'kind:term AND name:List.*'  -- 'kind:type OR (kind:ctor AND NOT name:lib.*)'." ::
+                             Text
+                         )
+                  ]
+            ],
+        "required" .= (["projectContext", "query"] :: [Text])
+      ]
+
+instance FromJSON FindToolArguments where
+  parseJSON = withObject "FindToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    query <- o .: "query"
+    pure $ FindToolArguments {projectContext, query}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
