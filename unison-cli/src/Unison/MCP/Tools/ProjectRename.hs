@@ -36,7 +36,16 @@ projectRenameTool =
         "Rename the project supplied via projectContext to 'newName'. \
         \UCM refuses when another project already has that name; the \
         \error is returned in the response. No-op when newName equals \
-        \the existing project name.",
+        \the existing project name. \
+        \\
+        \WARNING: This renames ONLY the local project. Branch \
+        \remote-tracking URLs (which embed the original project name) are \
+        \NOT updated. A subsequent 'push' without an explicit target will \
+        \still write to the ORIGINAL remote project on Share. To publish \
+        \the renamed project under a new Share project, either (a) call \
+        \'push' with an explicit target {project, branch}, or (b) verify \
+        \with 'list-project-branches' that the remote URL is what you \
+        \expect before pushing.",
       toolAnnotations =
         ToolAnnotations
           { title = Just "Rename Project",
