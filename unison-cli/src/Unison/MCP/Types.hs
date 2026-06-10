@@ -41,6 +41,8 @@ module Unison.MCP.Types
     DiagnoseToolArguments (..),
     PushToolArguments (..),
     PushTarget (..),
+    PullToolArguments (..),
+    PullSource (..),
     toToolName,
     fromToolName,
   )
@@ -123,6 +125,7 @@ data ToolKind
   | CompleteUpdateTool
   | DiagnoseTool
   | PushTool
+  | PullTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -165,7 +168,8 @@ kindNameMapping =
       (DetectStaleTool, "detect-stale"),
       (CompleteUpdateTool, "complete-update"),
       (DiagnoseTool, "diagnose"),
-      (PushTool, "push")
+      (PushTool, "push"),
+      (PullTool, "pull")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1426,6 +1430,74 @@ instance FromJSON PushToolArguments where
     target <- o .:? "target"
     pushBehavior <- o .:? "pushBehavior"
     pure $ PushToolArguments {projectContext, target, pushBehavior}
+
+data PullSource = PullSource
+  { project :: Maybe Text,
+    branch :: Maybe Text
+  }
+  deriving (Eq, Show)
+
+instance FromJSON PullSource where
+  parseJSON = withObject "PullSource" $ \o -> do
+    project <- o .:? "project"
+    branch <- o .:? "branch"
+    pure $ PullSource {project, branch}
+
+data PullToolArguments = PullToolArguments
+  { projectContext :: ProjectContext,
+    source :: PullSource,
+    pullMode :: Maybe Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema PullToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "source"
+                .= object
+                  [ "type" .= ("object" :: Text),
+                    "description"
+                      .= ( "Remote source on Share. At least one of {project, branch} must be present. \
+                           \Use branch='latest-release' to fetch the latest released version." ::
+                             Text
+                         ),
+                    "properties"
+                      .= object
+                        [ "project"
+                            .= object
+                              [ "type" .= ("string" :: Text),
+                                "description" .= ("Remote project name on Share, e.g. '@unison/base'." :: Text)
+                              ],
+                          "branch"
+                            .= object
+                              [ "type" .= ("string" :: Text),
+                                "description" .= ("Remote branch name, e.g. 'main' or 'releases/2.0.0' or 'latest-release'." :: Text)
+                              ]
+                        ]
+                  ],
+              "pullMode"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "enum" .= (["with-history", "without-history"] :: [Text]),
+                    "description"
+                      .= ( "Whether to fetch the full causal history (default) or only the current head." ::
+                             Text
+                         )
+                  ]
+            ],
+        "required" .= (["projectContext", "source"] :: [Text])
+      ]
+
+instance FromJSON PullToolArguments where
+  parseJSON = withObject "PullToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    source <- o .: "source"
+    pullMode <- o .:? "pullMode"
+    pure $ PullToolArguments {projectContext, source, pullMode}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
