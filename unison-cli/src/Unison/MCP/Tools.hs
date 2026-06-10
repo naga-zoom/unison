@@ -439,10 +439,10 @@ parseFindOutput msgs =
       let t = Text.strip raw
        in case Text.breakOn ". " t of
             (num, rest) | not (Text.null rest) && Text.all isDigit num ->
-              let body = Text.drop 2 rest
+              let body = Text.stripStart (Text.drop 2 rest)
                in case Text.breakOn " : " body of
-                    (name, sig) | not (Text.null sig) -> Just (name, Text.drop 3 sig)
-                    _ -> Just (body, "") -- type decls etc. lack ` : `
+                    (name, sig) | not (Text.null sig) -> Just (Text.stripEnd name, Text.strip (Text.drop 3 sig))
+                    _ -> Just (Text.strip body, "") -- type decls etc. lack ` : `
             _ -> Nothing
     isDigit c = c >= '0' && c <= '9'
 
