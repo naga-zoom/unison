@@ -33,6 +33,7 @@ import Unison.HashQualifiedPrime qualified as HQ'
 import Unison.MCP.Cli (cliToMCP, handleInputMCP, virtualSourceName)
 import Unison.MCP.Share.API (ReadmeResponse (..))
 import Unison.MCP.Share.API qualified as Share
+import Unison.MCP.Tools.DetectStale (detectStaleTool)
 import Unison.MCP.Tools.Find (findTool)
 import Unison.MCP.Tools.Probe (probeTool)
 import Unison.MCP.Types
@@ -84,7 +85,8 @@ tools =
     compileTool,
     libUpgradeTool,
     findTool,
-    probeTool
+    probeTool,
+    detectStaleTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
