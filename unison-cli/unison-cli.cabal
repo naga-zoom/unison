@@ -176,6 +176,7 @@ library
       Unison.MCP.Tools
       Unison.MCP.Tools.CompleteUpdate
       Unison.MCP.Tools.DetectStale
+      Unison.MCP.Tools.Diagnose
       Unison.MCP.Tools.Find
       Unison.MCP.Tools.Probe
       Unison.MCP.Types
@@ -398,6 +399,7 @@ test-suite cli-tests
       Unison.Test.LSP
       Unison.Test.MCP.CompleteUpdate
       Unison.Test.MCP.DetectStale
+      Unison.Test.MCP.Diagnose
       Unison.Test.MCP.Find
       Unison.Test.MCP.Pattern
       Unison.Test.MCP.Resolution
@@ -445,7 +447,8 @@ test-suite cli-tests
       ViewPatterns
   ghc-options: -Wall
   build-depends:
-      base
+      aeson
+    , base
     , code-page
     , containers
     , crypton

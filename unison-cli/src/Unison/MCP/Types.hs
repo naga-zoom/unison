@@ -38,6 +38,7 @@ module Unison.MCP.Types
     ProbeToolArguments (..),
     DetectStaleToolArguments (..),
     CompleteUpdateToolArguments (..),
+    DiagnoseToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -118,6 +119,7 @@ data ToolKind
   | ProbeTool
   | DetectStaleTool
   | CompleteUpdateTool
+  | DiagnoseTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -158,7 +160,8 @@ kindNameMapping =
       (FindTool, "find"),
       (ProbeTool, "probe"),
       (DetectStaleTool, "detect-stale"),
-      (CompleteUpdateTool, "complete-update")
+      (CompleteUpdateTool, "complete-update"),
+      (DiagnoseTool, "diagnose")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1328,6 +1331,27 @@ instance FromJSON CompleteUpdateToolArguments where
   parseJSON = withObject "CompleteUpdateToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
     pure $ CompleteUpdateToolArguments {projectContext}
+
+newtype DiagnoseToolArguments = DiagnoseToolArguments
+  { projectContext :: ProjectContext
+  }
+  deriving newtype (Eq, Show)
+
+instance HasInputSchema DiagnoseToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext)
+            ],
+        "required" .= (["projectContext"] :: [Text])
+      ]
+
+instance FromJSON DiagnoseToolArguments where
+  parseJSON = withObject "DiagnoseToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    pure $ DiagnoseToolArguments {projectContext}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =

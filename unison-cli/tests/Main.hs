@@ -9,6 +9,7 @@ import Unison.Test.Cli.Monad qualified as Cli.Monad
 import Unison.Test.LSP qualified as LSP
 import Unison.Test.MCP.CompleteUpdate qualified as MCP.CompleteUpdate
 import Unison.Test.MCP.DetectStale qualified as MCP.DetectStale
+import Unison.Test.MCP.Diagnose qualified as MCP.Diagnose
 import Unison.Test.MCP.Find qualified as MCP.Find
 import Unison.Test.MCP.Pattern qualified as MCP.Pattern
 import Unison.Test.MCP.Resolution qualified as MCP.Resolution
@@ -23,6 +24,7 @@ test =
       Cli.Monad.test,
       MCP.CompleteUpdate.test,
       MCP.DetectStale.test,
+      MCP.Diagnose.test,
       MCP.Find.test,
       MCP.Pattern.test,
       MCP.Resolution.test,
