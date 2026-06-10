@@ -34,6 +34,7 @@ import Unison.MCP.Cli (cliToMCP, handleInputMCP, virtualSourceName)
 import Unison.MCP.Share.API (ReadmeResponse (..))
 import Unison.MCP.Share.API qualified as Share
 import Unison.MCP.Tools.Find (findTool)
+import Unison.MCP.Tools.Probe (probeTool)
 import Unison.MCP.Types
 import Unison.MCP.Wrapper
 import Unison.MCP.Wrapper qualified as MCPWrapper
@@ -80,7 +81,8 @@ tools =
     reflogTool,
     historyTool,
     createBranchTool,
-    findTool
+    findTool,
+    probeTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext

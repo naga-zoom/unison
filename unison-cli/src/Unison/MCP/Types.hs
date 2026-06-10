@@ -33,6 +33,7 @@ module Unison.MCP.Types
     HistoryToolArguments (..),
     CreateBranchToolArguments (..),
     FindToolArguments (..),
+    ProbeToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -108,6 +109,7 @@ data ToolKind
   | HistoryTool
   | CreateBranchTool
   | FindTool
+  | ProbeTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -143,7 +145,8 @@ kindNameMapping =
       (ReflogTool, "reflog"),
       (HistoryTool, "history"),
       (CreateBranchTool, "create-branch"),
-      (FindTool, "find")
+      (FindTool, "find"),
+      (ProbeTool, "probe")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1137,6 +1140,38 @@ instance FromJSON FindToolArguments where
     projectContext <- o .: "projectContext"
     query <- o .: "query"
     pure $ FindToolArguments {projectContext, query}
+
+data ProbeToolArguments = ProbeToolArguments
+  { projectContext :: ProjectContext,
+    hash :: Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ProbeToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "hash"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description"
+                      .= ( "A short hash to resolve, e.g. '#abc123'. Leading '#' is required; "
+                             <> "cycle/cid suffixes (e.g. '#abc.1.2') are accepted." ::
+                             Text
+                         )
+                  ]
+            ],
+        "required" .= (["projectContext", "hash"] :: [Text])
+      ]
+
+instance FromJSON ProbeToolArguments where
+  parseJSON = withObject "ProbeToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    hash <- o .: "hash"
+    pure $ ProbeToolArguments {projectContext, hash}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =

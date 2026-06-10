@@ -167,12 +167,14 @@ library
       Unison.MCP
       Unison.MCP.Cli
       Unison.MCP.Domain.Pattern
+      Unison.MCP.Domain.Resolution
       Unison.MCP.Prompts
       Unison.MCP.Server
       Unison.MCP.Share.API
       Unison.MCP.StaticResources
       Unison.MCP.Tools
       Unison.MCP.Tools.Find
+      Unison.MCP.Tools.Probe
       Unison.MCP.Types
       Unison.MCP.Wrapper
       Unison.Share.Codeserver
@@ -393,6 +395,7 @@ test-suite cli-tests
       Unison.Test.LSP
       Unison.Test.MCP.Find
       Unison.Test.MCP.Pattern
+      Unison.Test.MCP.Resolution
       Unison.Test.Ucm
       Unison.Test.UriParser
   hs-source-dirs:
