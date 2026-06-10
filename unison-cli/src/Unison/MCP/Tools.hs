@@ -118,7 +118,8 @@ tools =
     crossProjectMoveTool,
     reanchorTool,
     sanityFixTool,
-    releaseTool
+    releaseTool,
+    evalTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
@@ -221,6 +222,34 @@ withCode code inputs projectContext = do
   output <- handleInputMCP projectContext ([Left $ UnisonFileChanged filePath source] <> (Right <$> inputs))
   let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode output
   pure $ textToolResult outputJSON
+
+evalTool :: Tool MCP
+evalTool =
+  Tool
+    { toolName = toToolName EvalTool,
+      toolDescription =
+        "Evaluate a pure (or pure-ish) Unison expression in the project's \
+        \context and return the result. Equivalent to writing `> <expr>` \
+        \in a scratch file. For expressions with `IO` effects, use `run` \
+        \with a `'{IO,Exception} ()` thunk instead.",
+      toolAnnotations =
+        ToolAnnotations
+          { title = Just "Eval Expression",
+            readOnlyHint = Just True,
+            destructiveHint = Just False,
+            idempotentHint = Just True,
+            openWorldHint = Just False
+          },
+      toolArgType = Proxy @EvalToolArguments,
+      toolHandler = \(EvalToolArguments {projectContext, expression}) -> handleToolError $ do
+        let watch = "> " <> expression
+        let inputs =
+              [ Left (Input.UnisonFileChanged virtualSourceName watch)
+              ]
+        output <- handleInputMCP projectContext inputs
+        let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode output
+        pure $ textToolResult outputJSON
+    }
 
 typecheckCodeTool :: Tool MCP
 typecheckCodeTool =
@@ -359,16 +388,16 @@ listProjectDefinitionsTool =
       toolArgType = Proxy,
       toolHandler = \(ProjectContextArgument projectContext) -> handleToolError $ do
         let noop _ = pure ()
-        output <-
-          cliToMCP projectContext noop Cli.getCurrentBranch0 >>= \case
-            (Just b, _output) -> do
-              let noLibBranch = Branch.deleteLibdeps b
-              if (R.null $ Branch.deepTerms noLibBranch) && (R.null $ Branch.deepTypes noLibBranch)
-                then pure $ textToolResult "No definitions found in the project. There may be definitions within the project's installed libraries."
-                else jsonToolResult <$> handleInputMCP projectContext [Right $ Input.FindI False (FindLocal Path.Root') []]
-            _ -> pure . errorToolResult $ "No current branch found"
-        let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode output
-        pure $ textToolResult outputJSON
+        (mb, _) <- cliToMCP projectContext noop Cli.getCurrentBranch0
+        case mb of
+          Nothing -> pure $ errorToolResult "No current branch found"
+          Just b -> do
+            let noLibBranch = Branch.deleteLibdeps b
+            if (R.null $ Branch.deepTerms noLibBranch) && (R.null $ Branch.deepTypes noLibBranch)
+              then pure $ textToolResult "No definitions found in the project. There may be definitions within the project's installed libraries."
+              else do
+                out <- handleInputMCP projectContext [Right $ Input.FindI False (FindLocal Path.Root') []]
+                pure $ textToolResult (Text.decodeUtf8 . BL.toStrict $ Aeson.encode out)
     }
 
 listProjectLibrariesTool :: Tool MCP
@@ -855,9 +884,21 @@ historyTool =
             Nothing -> throwError $ "Invalid causal hash: " <> hash
           Nothing -> pure $ Input.BranchAtPath Path.Current'
         output <- handleInputMCP projectContext [Right $ Input.HistoryI limit diffLimit branchId]
-        let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode output
+        let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode (stripHistoryPreamble output)
         pure $ textToolResult outputJSON
     }
+
+-- | Strip UCM's "Note: The most recent namespace hash is immediately below this
+-- message." preamble line from history output — pure noise to agents.
+stripHistoryPreamble :: CliOutput -> CliOutput
+stripHistoryPreamble out =
+  out {outputMessages = map dropPreamble out.outputMessages}
+  where
+    preamble = "Note: The most recent namespace hash is immediately below this message."
+    dropPreamble t =
+      let ls = Text.lines t
+          ls' = filter (not . Text.isInfixOf preamble) ls
+       in Text.dropWhile (== '\n') (Text.unlines ls')
 
 createBranchTool :: Tool MCP
 createBranchTool =

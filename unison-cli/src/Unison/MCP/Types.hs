@@ -58,6 +58,7 @@ module Unison.MCP.Types
     HashRename (..),
     SanityFixToolArguments (..),
     ReleaseToolArguments (..),
+    EvalToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -152,6 +153,7 @@ data ToolKind
   | ReanchorTool
   | SanityFixTool
   | ReleaseTool
+  | EvalTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -206,7 +208,8 @@ kindNameMapping =
       (CrossProjectMoveTool, "cross-project-move"),
       (ReanchorTool, "reanchor"),
       (SanityFixTool, "sanity-fix"),
-      (ReleaseTool, "release")
+      (ReleaseTool, "release"),
+      (EvalTool, "eval")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -2046,6 +2049,34 @@ instance FromJSON ReleaseToolArguments where
     version <- o .: "version"
     dryRun <- o .:? "dryRun"
     pure $ ReleaseToolArguments {projectContext, version, dryRun}
+
+data EvalToolArguments = EvalToolArguments
+  { projectContext :: ProjectContext,
+    expression :: Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema EvalToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "expression"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description" .= ("A Unison expression to evaluate, e.g. `List.map (n -> n * n) [1,2,3]` or `myProject.myFunction 42`. The expression is wrapped in a `>` watch line and typechecked + evaluated in one step." :: Text)
+                  ]
+            ],
+        "required" .= (["projectContext", "expression"] :: [Text])
+      ]
+
+instance FromJSON EvalToolArguments where
+  parseJSON = withObject "EvalToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    expression <- o .: "expression"
+    pure $ EvalToolArguments {projectContext, expression}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
