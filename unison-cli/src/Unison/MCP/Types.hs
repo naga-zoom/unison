@@ -63,6 +63,7 @@ module Unison.MCP.Types
     ListProjectBranchesArgs (..),
     ListProjectDefinitionsArgs (..),
     Pagination (..),
+    CrossProjectDependentsToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -158,6 +159,7 @@ data ToolKind
   | SanityFixTool
   | ReleaseTool
   | EvalTool
+  | CrossProjectDependentsTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -213,7 +215,8 @@ kindNameMapping =
       (ReanchorTool, "reanchor"),
       (SanityFixTool, "sanity-fix"),
       (ReleaseTool, "release"),
-      (EvalTool, "eval")
+      (EvalTool, "eval"),
+      (CrossProjectDependentsTool, "cross-project-dependents")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -351,7 +354,8 @@ data ViewDefinitionsToolArguments = ViewDefinitionsToolArguments
   { projectContext :: ProjectContext,
     names :: [Name],
     hashes :: [Text],
-    signaturesOnly :: Maybe Bool
+    signaturesOnly :: Maybe Bool,
+    withDirectDeps :: Maybe Bool
   }
   deriving (Eq, Show)
 
@@ -382,6 +386,11 @@ instance HasInputSchema ViewDefinitionsToolArguments where
                 .= object
                   [ "type" .= ("boolean" :: Text),
                     "description" .= ("If true, return only type signatures (no bodies). Saves substantial tokens for large definitions. Default false." :: Text)
+                  ],
+              "withDirectDeps"
+                .= object
+                  [ "type" .= ("boolean" :: Text),
+                    "description" .= ("If true, also render the direct dependencies of each requested definition in the same response. Saves one round-trip for the common 'understand this def + its deps' workflow. Default false." :: Text)
                   ]
             ],
         "required" .= ["projectContext" :: Text]
@@ -394,7 +403,8 @@ instance FromJSON ViewDefinitionsToolArguments where
     let names = maybe [] (map Name.unsafeParseText) namesRaw
     hashes <- fromMaybe [] <$> o .:? "hashes"
     signaturesOnly <- o .:? "signaturesOnly"
-    pure $ ViewDefinitionsToolArguments {projectContext, names, hashes, signaturesOnly}
+    withDirectDeps <- o .:? "withDirectDeps"
+    pure $ ViewDefinitionsToolArguments {projectContext, names, hashes, signaturesOnly, withDirectDeps}
 
 data UpdateDefinitionsToolArguments = UpdateDefinitionsToolArguments
   { projectContext :: ProjectContext,
@@ -2214,6 +2224,46 @@ instance FromJSON ListProjectDefinitionsArgs where
     limit <- o .:? "limit"
     includeLibs <- o .:? "includeLibs"
     pure $ ListProjectDefinitionsArgs {projectContext, offset, limit, includeLibs}
+
+data CrossProjectDependentsToolArguments = CrossProjectDependentsToolArguments
+  { definitionName :: Name,
+    projects :: Maybe [Text],
+    branchName :: Maybe Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema CrossProjectDependentsToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "definitionName"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description" .= ("The fully-qualified name of the definition whose dependents to find." :: Text)
+                  ],
+              "projects"
+                .= object
+                  [ "type" .= ("array" :: Text),
+                    "items" .= object ["type" .= ("string" :: Text)],
+                    "description" .= ("Optional explicit list of local project names to scan. When omitted, all local projects are scanned." :: Text)
+                  ],
+              "branchName"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description" .= ("Branch name to use in each project; default `main`." :: Text)
+                  ]
+            ],
+        "required" .= (["definitionName"] :: [Text])
+      ]
+
+instance FromJSON CrossProjectDependentsToolArguments where
+  parseJSON = withObject "CrossProjectDependentsToolArguments" $ \o -> do
+    definitionName <- Name.unsafeParseText <$> o .: "definitionName"
+    projects <- o .:? "projects"
+    branchName <- o .:? "branchName"
+    pure $ CrossProjectDependentsToolArguments {definitionName, projects, branchName}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
