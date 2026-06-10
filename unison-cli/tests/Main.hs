@@ -12,6 +12,7 @@ import Unison.Test.MCP.DetectStale qualified as MCP.DetectStale
 import Unison.Test.MCP.Find qualified as MCP.Find
 import Unison.Test.MCP.Pattern qualified as MCP.Pattern
 import Unison.Test.MCP.Resolution qualified as MCP.Resolution
+import Unison.Test.MCP.Structural qualified as MCP.Structural
 import Unison.Test.UriParser qualified as UriParser
 
 test :: Test ()
@@ -25,6 +26,7 @@ test =
       MCP.Find.test,
       MCP.Pattern.test,
       MCP.Resolution.test,
+      MCP.Structural.test,
       UriParser.test
     ]
 
