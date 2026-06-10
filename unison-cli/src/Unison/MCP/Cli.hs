@@ -3,6 +3,7 @@ module Unison.MCP.Cli
     ppForProjectContext,
     cliToMCP,
     virtualSourceName,
+    CliOutput (..),
   )
 where
 
