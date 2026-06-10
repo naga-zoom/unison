@@ -179,6 +179,7 @@ library
       Unison.MCP.Tools.Diagnose
       Unison.MCP.Tools.Find
       Unison.MCP.Tools.Probe
+      Unison.MCP.Tools.Push
       Unison.MCP.Types
       Unison.MCP.Wrapper
       Unison.Share.Codeserver

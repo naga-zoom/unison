@@ -39,6 +39,8 @@ module Unison.MCP.Types
     DetectStaleToolArguments (..),
     CompleteUpdateToolArguments (..),
     DiagnoseToolArguments (..),
+    PushToolArguments (..),
+    PushTarget (..),
     toToolName,
     fromToolName,
   )
@@ -120,6 +122,7 @@ data ToolKind
   | DetectStaleTool
   | CompleteUpdateTool
   | DiagnoseTool
+  | PushTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -161,7 +164,8 @@ kindNameMapping =
       (ProbeTool, "probe"),
       (DetectStaleTool, "detect-stale"),
       (CompleteUpdateTool, "complete-update"),
-      (DiagnoseTool, "diagnose")
+      (DiagnoseTool, "diagnose"),
+      (PushTool, "push")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1352,6 +1356,76 @@ instance FromJSON DiagnoseToolArguments where
   parseJSON = withObject "DiagnoseToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
     pure $ DiagnoseToolArguments {projectContext}
+
+data PushTarget = PushTarget
+  { project :: Maybe Text,
+    branch :: Maybe Text
+  }
+  deriving (Eq, Show)
+
+instance FromJSON PushTarget where
+  parseJSON = withObject "PushTarget" $ \o -> do
+    project <- o .:? "project"
+    branch <- o .:? "branch"
+    pure $ PushTarget {project, branch}
+
+data PushToolArguments = PushToolArguments
+  { projectContext :: ProjectContext,
+    target :: Maybe PushTarget,
+    pushBehavior :: Maybe Text
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema PushToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "target"
+                .= object
+                  [ "type" .= ("object" :: Text),
+                    "description"
+                      .= ( "Optional remote target. When absent, uses the source branch's remote-tracking. \
+                           \At least one of {project, branch} must be present when 'target' is provided." ::
+                             Text
+                         ),
+                    "properties"
+                      .= object
+                        [ "project"
+                            .= object
+                              [ "type" .= ("string" :: Text),
+                                "description" .= ("Target project name on Share, e.g. '@unison/base'." :: Text)
+                              ],
+                          "branch"
+                            .= object
+                              [ "type" .= ("string" :: Text),
+                                "description" .= ("Target branch name on Share, e.g. 'main' or 'releases/2.0.0'." :: Text)
+                              ]
+                        ]
+                  ],
+              "pushBehavior"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "enum" .= (["force", "require-empty", "require-non-empty"] :: [Text]),
+                    "description"
+                      .= ( "How to handle the remote namespace. 'force' overwrites; \
+                           \'require-empty' insists the remote namespace be empty; \
+                           \'require-non-empty' (default) refuses to push to an empty namespace." ::
+                             Text
+                         )
+                  ]
+            ],
+        "required" .= (["projectContext"] :: [Text])
+      ]
+
+instance FromJSON PushToolArguments where
+  parseJSON = withObject "PushToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    target <- o .:? "target"
+    pushBehavior <- o .:? "pushBehavior"
+    pure $ PushToolArguments {projectContext, target, pushBehavior}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
