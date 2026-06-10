@@ -45,6 +45,7 @@ module Unison.MCP.Types
     PullSource (..),
     MergeToolArguments (..),
     MergeSource (..),
+    ProjectCreateToolArguments (..),
     toToolName,
     fromToolName,
   )
@@ -129,6 +130,7 @@ data ToolKind
   | PushTool
   | PullTool
   | MergeTool
+  | ProjectCreateTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -173,7 +175,8 @@ kindNameMapping =
       (DiagnoseTool, "diagnose"),
       (PushTool, "push"),
       (PullTool, "pull"),
-      (MergeTool, "merge")
+      (MergeTool, "merge"),
+      (ProjectCreateTool, "project-create")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -1560,6 +1563,41 @@ instance FromJSON MergeToolArguments where
     projectContext <- o .: "projectContext"
     source <- o .: "source"
     pure $ MergeToolArguments {projectContext, source}
+
+data ProjectCreateToolArguments = ProjectCreateToolArguments
+  { projectContext :: ProjectContext,
+    projectName :: Maybe Text,
+    downloadBase :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema ProjectCreateToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "projectContext" .= toInputSchema (Proxy :: Proxy ProjectContext),
+              "projectName"
+                .= object
+                  [ "type" .= ("string" :: Text),
+                    "description" .= ("Optional desired project name. UCM auto-generates a name if omitted." :: Text)
+                  ],
+              "downloadBase"
+                .= object
+                  [ "type" .= ("boolean" :: Text),
+                    "description" .= ("Whether to install @unison/base into the new project (default: true)." :: Text)
+                  ]
+            ],
+        "required" .= (["projectContext"] :: [Text])
+      ]
+
+instance FromJSON ProjectCreateToolArguments where
+  parseJSON = withObject "ProjectCreateToolArguments" $ \o -> do
+    projectContext <- o .: "projectContext"
+    projectName <- o .:? "projectName"
+    downloadBase <- o .:? "downloadBase"
+    pure $ ProjectCreateToolArguments {projectContext, projectName, downloadBase}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =
