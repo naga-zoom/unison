@@ -178,6 +178,7 @@ library
       Unison.MCP.Tools.DetectStale
       Unison.MCP.Tools.Diagnose
       Unison.MCP.Tools.Find
+      Unison.MCP.Tools.Merge
       Unison.MCP.Tools.Probe
       Unison.MCP.Tools.Pull
       Unison.MCP.Tools.Push
