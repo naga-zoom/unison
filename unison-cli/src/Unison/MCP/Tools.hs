@@ -484,7 +484,13 @@ updateTool :: Tool MCP
 updateTool =
   Tool
     { toolName = toToolName UpdateDefinitionsTool,
-      toolDescription = "Typecheck, then update definitions in the codebase to the provided code.",
+      toolDescription =
+        "Typecheck, then update definitions in the codebase to the \
+        \provided code. The typecheck is atomic — on any error the \
+        \codebase is unchanged. Skip a separate typecheck-code call \
+        \unless you want a dry-run validation without persisting; in \
+        \that case pass `dryRun: true` here to get the same diff \
+        \without writing.",
       toolAnnotations =
         ToolAnnotations
           { title = Just "Update Definitions",
@@ -494,8 +500,10 @@ updateTool =
             openWorldHint = Just False
           },
       toolArgType = Proxy,
-      toolHandler = \(UpdateDefinitionsToolArguments {projectContext, code}) -> handleToolError $ do
-        withCode code [Input.Update2I] projectContext
+      toolHandler = \(UpdateDefinitionsToolArguments {projectContext, code, dryRun}) -> handleToolError $ do
+        case fromMaybe False dryRun of
+          True -> withCode code [] projectContext
+          False -> withCode code [Input.Update2I] projectContext
     }
 
 diffUpdateTool :: Tool MCP

@@ -394,7 +394,8 @@ instance FromJSON ViewDefinitionsToolArguments where
 
 data UpdateDefinitionsToolArguments = UpdateDefinitionsToolArguments
   { projectContext :: ProjectContext,
-    code :: Either FilePath Text
+    code :: Either FilePath Text,
+    dryRun :: Maybe Bool
   }
   deriving (Eq, Show)
 
@@ -449,7 +450,8 @@ instance FromJSON UpdateDefinitionsToolArguments where
       (_, Just sourceCode, _) -> pure (Right sourceCode)
       (_, _, Just text) -> pure (Right text)
       _ -> fail "Expected one of: code.filePath, code.sourceCode"
-    pure $ UpdateDefinitionsToolArguments {projectContext, code}
+    dryRun <- o .:? "dryRun"
+    pure $ UpdateDefinitionsToolArguments {projectContext, code, dryRun}
 
 data DiffUpdateToolArguments = DiffUpdateToolArguments
   { projectContext :: ProjectContext,
