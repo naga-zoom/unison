@@ -166,6 +166,7 @@ library
       Unison.Main
       Unison.MCP
       Unison.MCP.Cli
+      Unison.MCP.Domain.Pattern
       Unison.MCP.Prompts
       Unison.MCP.Server
       Unison.MCP.Share.API
@@ -389,6 +390,7 @@ test-suite cli-tests
       Unison.Test.ClearCache
       Unison.Test.Cli.Monad
       Unison.Test.LSP
+      Unison.Test.MCP.Pattern
       Unison.Test.Ucm
       Unison.Test.UriParser
   hs-source-dirs:
