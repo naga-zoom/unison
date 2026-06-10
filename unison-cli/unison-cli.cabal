@@ -170,6 +170,7 @@ library
       Unison.MCP.Domain.Pattern
       Unison.MCP.Domain.Resolution
       Unison.MCP.Domain.Structural
+      Unison.MCP.Domain.Transaction
       Unison.MCP.Prompts
       Unison.MCP.Server
       Unison.MCP.Share.API
@@ -413,6 +414,7 @@ test-suite cli-tests
       Unison.Test.MCP.Pattern
       Unison.Test.MCP.Resolution
       Unison.Test.MCP.Structural
+      Unison.Test.MCP.Transaction
       Unison.Test.Ucm
       Unison.Test.UriParser
   hs-source-dirs:
