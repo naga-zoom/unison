@@ -26,14 +26,16 @@ import Data.Data (Proxy (..))
 import Data.Set qualified as Set
 import Data.Text.Encoding qualified as Text
 import Unison.Cli.MonadUtils qualified as Cli
+import Unison.Codebase.Branch qualified as Branch
+import Unison.MCP.Cache qualified as Cache
 import Unison.MCP.Cli (cliToMCP)
 import Unison.MCP.Domain.Structural (StructuralIssue (..), scanBranch)
 import Unison.MCP.Types
+import Unison.MCP.Wire qualified as Wire
 import Unison.MCP.Wrapper
 import Unison.Prelude
 import Unison.Reference qualified as Reference
 import Unison.Referent qualified as Referent
-import Unison.ShortHash qualified as ShortHash
 import Unison.Syntax.Name qualified as Name
 import UnliftIO qualified
 
@@ -79,17 +81,25 @@ diagnoseTool =
       toolHandler = \(DiagnoseToolArguments {projectContext}) -> handleToolError $ do
         codebase <- asks (.codebase)
         let noop _ = pure ()
-        (mb, _output) <- cliToMCP projectContext noop Cli.getCurrentBranch0
-        case mb of
+        (mFullBranch, _output) <- cliToMCP projectContext noop Cli.getCurrentBranch
+        case mFullBranch of
           Nothing -> throwError "No current branch"
-          Just b -> do
-            structuralIssues <- UnliftIO.liftIO $ scanBranch codebase b
-            let payload =
-                  DiagnoseResponse
-                    { issues = map issueToJson structuralIssues,
-                      totalCount = length structuralIssues
-                    }
-            pure $ textToolResult $ Text.decodeUtf8 . BL.toStrict $ Aeson.encode payload
+          Just fullBranch -> do
+            let b = Branch.head fullBranch
+            -- Merkle-keyed cache: same branch hash → reuse scan result.
+            let cacheKey = Cache.branchCacheKey fullBranch "diagnose"
+            Cache.getOrComputeEMCP cacheKey
+              ( do
+                  structuralIssues <- UnliftIO.liftIO $ scanBranch codebase b
+                  let payload =
+                        DiagnoseResponse
+                          { issues = map issueToJson structuralIssues,
+                            totalCount = length structuralIssues
+                          }
+                  pure (Aeson.toJSON payload)
+              )
+              >>= \payload ->
+                pure $ textToolResult $ Text.decodeUtf8 . BL.toStrict $ Aeson.encode payload
     }
 
 -- ----------------------------------------------------------------------------
@@ -117,7 +127,7 @@ issueToJson = \case
       ]
   where
     refToText :: Reference.TypeReference -> Text
-    refToText = ShortHash.toText . Reference.toShortHash
+    refToText = Wire.shortHashText . Reference.toShortHash
 
     referentText :: Referent.Referent -> Text
-    referentText = ShortHash.toText . Referent.toShortHash
+    referentText = Wire.shortHashText . Referent.toShortHash

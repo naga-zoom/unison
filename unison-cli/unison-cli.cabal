@@ -198,6 +198,7 @@ library
       Unison.MCP.Tools.SanityFix
       Unison.MCP.Tools.SourceRename
       Unison.MCP.Types
+      Unison.MCP.Wire
       Unison.MCP.Wrapper
       Unison.Share.Codeserver
       Unison.Share.ExpectedHashMismatches

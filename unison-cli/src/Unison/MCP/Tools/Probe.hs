@@ -34,6 +34,7 @@ import Unison.MCP.Domain.Resolution
     statusOf,
   )
 import Unison.MCP.Types
+import Unison.MCP.Wire qualified as Wire
 import Unison.MCP.Wrapper
 import Unison.Prelude
 import Unison.Reference qualified as Reference
@@ -115,7 +116,7 @@ instance Aeson.ToJSON ResolutionJson where
 renderResponse :: ResolvedHash -> ProbeResponse
 renderResponse r =
   ProbeResponse
-    { hash = ShortHash.toText r.hashInput,
+    { hash = Wire.shortHashText r.hashInput,
       status = statusText (statusOf r),
       resolutions = map renderResolution r.resolutions,
       bestGuessName = Name.toText <$> bestGuess r
@@ -137,8 +138,8 @@ depKind = \case
 
 depHash :: LabeledDependency -> Text
 depHash = \case
-  LD.TermReferent ref -> ShortHash.toText (Referent.toShortHash ref)
-  LD.TypeReference ref -> ShortHash.toText (Reference.toShortHash ref)
+  LD.TermReferent ref -> Wire.shortHashText (Referent.toShortHash ref)
+  LD.TypeReference ref -> Wire.shortHashText (Reference.toShortHash ref)
 
 statusText :: Status -> Text
 statusText = \case
