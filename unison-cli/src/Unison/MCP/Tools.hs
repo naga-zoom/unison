@@ -57,6 +57,7 @@ import Unison.MCP.Tools.ReapTempBranches (reapTempBranchesTool)
 import Unison.MCP.Tools.Reanchor (reanchorTool)
 import Unison.MCP.Tools.Release (releaseTool)
 import Unison.MCP.Tools.SanityFix (sanityFixTool)
+import Unison.MCP.Tools.Session (clearSessionContextTool, getSessionContextTool, setSessionContextTool)
 import Unison.MCP.Tools.SourceRename (sourceRenameTool)
 import Unison.MCP.Types
 import Unison.MCP.Wrapper
@@ -128,7 +129,10 @@ tools =
     releaseTool,
     evalTool,
     crossProjectDependentsTool,
-    findAndActTool
+    findAndActTool,
+    setSessionContextTool,
+    getSessionContextTool,
+    clearSessionContextTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
