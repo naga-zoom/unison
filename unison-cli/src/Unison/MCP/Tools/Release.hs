@@ -26,7 +26,7 @@ import Data.Data (Proxy (..))
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import Unison.Codebase.Editor.Input qualified as Input
-import Unison.Core.Project (ProjectAndBranch (..), ProjectBranchName (..))
+import Unison.Project (Semver (..))
 import Unison.MCP.Cli (CliOutput (..), handleInputMCP)
 import Unison.MCP.Types
 import Unison.MCP.Wrapper
@@ -37,12 +37,14 @@ releaseTool =
   Tool
     { toolName = toToolName ReleaseTool,
       toolDescription =
-        "Cut a release (v1, local-only): create the branch \
-        \releases/<version> from the current branch. v1 does NOT add \
-        \ReleaseNotes/Readme, push, or tag — drive those manually after \
-        \the local branch creation succeeds. Version must be \
-        \MAJOR.MINOR.PATCH (numeric segments). Pass dryRun=true to see \
-        \the plan without executing.",
+        "Cut a release draft (v1, local-only): runs UCM's \
+        \`release.draft <version>` which creates the branch \
+        \releases/drafts/<version> off the current context. The draft \
+        \is later promoted to a final release. v1 does NOT add \
+        \ReleaseNotes/Readme, push, or tag — drive those manually \
+        \after the local branch creation succeeds. Version must be \
+        \MAJOR.MINOR.PATCH (numeric segments). Pass dryRun=true to \
+        \see the plan without executing.",
       toolAnnotations =
         ToolAnnotations
           { title = Just "Release",
@@ -53,11 +55,13 @@ releaseTool =
           },
       toolArgType = Proxy @ReleaseToolArguments,
       toolHandler = \(ReleaseToolArguments {projectContext, version, dryRun}) -> handleToolError $ do
-        case parseVersion version of
+        case parseSemverTriple version of
           Left err -> pure $ errorToolResult err
-          Right validVersion -> do
-            let releaseBranchText = "releases/" <> validVersion
-                releaseBranch = UnsafeProjectBranchName releaseBranchText
+          Right semver@(Semver a b c) -> do
+            -- UCM's release.draft creates `releases/drafts/X.Y.Z`. The draft is
+            -- promoted to a final release later (separate flow not exposed via
+            -- this tool yet).
+            let releaseBranchText = "releases/drafts/" <> Text.pack (show a) <> "." <> Text.pack (show b) <> "." <> Text.pack (show c)
             case fromMaybe False dryRun of
               True ->
                 pure $
@@ -65,7 +69,7 @@ releaseTool =
                     encode $
                       Aeson.object
                         [ "dryRun" Aeson..= True,
-                          "version" Aeson..= validVersion,
+                          "version" Aeson..= version,
                           "willCreateBranch" Aeson..= releaseBranchText,
                           "sourceContext"
                             Aeson..= Aeson.object
@@ -74,16 +78,17 @@ releaseTool =
                               ]
                         ]
               False -> do
+                -- Use ReleaseDraftI (UCM's `release.draft`) — BranchI rejects
+                -- 'releases/X.Y.Z' names as reserved.
                 output <-
-                  handleInputMCP projectContext
-                    [Right $ Input.BranchI Input.BranchSourceI'CurrentContext (ProjectAndBranch Nothing releaseBranch)]
+                  handleInputMCP projectContext [Right (Input.ReleaseDraftI semver)]
                 let succeeded = null output.errorMessages
                 pure $
                   textToolResult $
                     encode $
                       Aeson.object
                         [ "ok" Aeson..= succeeded,
-                          "version" Aeson..= validVersion,
+                          "version" Aeson..= version,
                           "branchCreated" Aeson..= releaseBranchText,
                           "errors" Aeson..= output.errorMessages,
                           "output" Aeson..= output.outputMessages
@@ -92,12 +97,14 @@ releaseTool =
   where
     encode = Text.decodeUtf8 . BL.toStrict . Aeson.encode
 
-parseVersion :: Text -> Either Text Text
-parseVersion v =
+parseSemverTriple :: Text -> Either Text Semver
+parseSemverTriple v =
   case Text.splitOn "." v of
     [a, b, c]
-      | all Text.null [a, b, c] -> Left "Version must be MAJOR.MINOR.PATCH"
       | all (Text.all isDigit) [a, b, c],
-        all (not . Text.null) [a, b, c] ->
-          Right v
+        all (not . Text.null) [a, b, c],
+        Just ai <- readMaybe (Text.unpack a),
+        Just bi <- readMaybe (Text.unpack b),
+        Just ci <- readMaybe (Text.unpack c) ->
+          Right (Semver ai bi ci)
     _ -> Left $ "Invalid version: " <> v <> " — expected MAJOR.MINOR.PATCH"
