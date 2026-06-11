@@ -8,14 +8,18 @@ import Unison.Test.ClearCache qualified as ClearCache
 import Unison.Test.Cli.Monad qualified as Cli.Monad
 import Unison.Test.LSP qualified as LSP
 import Unison.Test.MCP.BranchProtection qualified as MCP.BranchProtection
+import Unison.Test.MCP.Cache qualified as MCP.Cache
+import Unison.Test.MCP.CompactPath qualified as MCP.CompactPath
 import Unison.Test.MCP.CompleteUpdate qualified as MCP.CompleteUpdate
 import Unison.Test.MCP.DetectStale qualified as MCP.DetectStale
 import Unison.Test.MCP.Diagnose qualified as MCP.Diagnose
 import Unison.Test.MCP.Find qualified as MCP.Find
 import Unison.Test.MCP.Pattern qualified as MCP.Pattern
+import Unison.Test.MCP.Pipeline qualified as MCP.Pipeline
 import Unison.Test.MCP.Resolution qualified as MCP.Resolution
 import Unison.Test.MCP.Structural qualified as MCP.Structural
 import Unison.Test.MCP.Transaction qualified as MCP.Transaction
+import Unison.Test.MCP.Wire qualified as MCP.Wire
 import Unison.Test.UriParser qualified as UriParser
 
 test :: Test ()
@@ -25,14 +29,18 @@ test =
       ClearCache.test,
       Cli.Monad.test,
       MCP.BranchProtection.test,
+      MCP.Cache.test,
+      MCP.CompactPath.test,
       MCP.CompleteUpdate.test,
       MCP.DetectStale.test,
       MCP.Diagnose.test,
       MCP.Find.test,
       MCP.Pattern.test,
+      MCP.Pipeline.test,
       MCP.Resolution.test,
       MCP.Structural.test,
       MCP.Transaction.test,
+      MCP.Wire.test,
       UriParser.test
     ]
 
