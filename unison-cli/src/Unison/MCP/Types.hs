@@ -91,6 +91,7 @@ import Unison.Runtime (Runtime)
 import Unison.Symbol (Symbol)
 import Unison.Syntax.Name qualified as Name
 import Unison.Syntax.NameSegment qualified as NameSegment
+import UnliftIO.STM qualified
 
 data Env = Env
   { codebase :: Codebase IO Symbol Ann,
@@ -98,7 +99,12 @@ data Env = Env
     sbRuntime :: Runtime Symbol,
     ucmVersion :: UCMVersion,
     workDir :: Maybe FilePath,
-    authenticatedHTTPClient :: AuthenticatedHttpClient
+    authenticatedHTTPClient :: AuthenticatedHttpClient,
+    -- | Merkle-keyed cache for expensive branch walks. Keyed by
+    -- @(causalHashText, resourceKindText)@; entries become unreachable
+    -- when the branch causal hash changes (no invalidation logic
+    -- needed). See 'Unison.MCP.Cache'.
+    branchCache :: UnliftIO.STM.TVar (Map (Text, Text) Value)
   }
 
 newtype MCP a = MCP

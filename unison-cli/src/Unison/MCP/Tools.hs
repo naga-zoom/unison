@@ -35,6 +35,7 @@ import Unison.Core.Project (ProjectBranchName (..), ProjectName (..))
 import Unison.HashQualified qualified as HQ
 import Unison.HashQualifiedPrime qualified as HQ'
 import Unison.ShortHash qualified as SH
+import Unison.MCP.Cache qualified as Cache
 import Unison.MCP.Cli (CliOutput (..), cliToMCP, handleInputMCP, virtualSourceName)
 import Unison.MCP.Share.API (ReadmeResponse (..))
 import Unison.MCP.Share.API qualified as Share
@@ -401,10 +402,11 @@ listProjectDefinitionsTool =
       toolArgType = Proxy @ListProjectDefinitionsArgs,
       toolHandler = \(ListProjectDefinitionsArgs {projectContext, offset, limit, includeLibs}) -> handleToolError $ do
         let noop _ = pure ()
-        (mb, _) <- cliToMCP projectContext noop Cli.getCurrentBranch0
-        case mb of
+        (mFullBranch, _) <- cliToMCP projectContext noop Cli.getCurrentBranch
+        case mFullBranch of
           Nothing -> pure $ errorToolResult "No current branch found"
-          Just b -> do
+          Just fullBranch -> do
+            let b = Branch.head fullBranch
             let withoutLibs = Branch.deleteLibdeps b
             let baseBranch = if fromMaybe False includeLibs then b else withoutLibs
             if (R.null $ Branch.deepTerms baseBranch) && (R.null $ Branch.deepTypes baseBranch)
@@ -415,16 +417,28 @@ listProjectDefinitionsTool =
                       Aeson.encode $
                         Aeson.object ["definitions" Aeson..= ([] :: [Aeson.Value]), "totalCount" Aeson..= (0 :: Int)]
               else do
-                out <- handleInputMCP projectContext [Right $ Input.FindI False (FindLocal Path.Root') []]
-                let entries = parseFindOutput out.outputMessages
-                let total = length entries
+                -- Merkle-key the enumeration. Same branch hash → same cached
+                -- entries, mutation produces a new hash → cache miss.
+                let kind =
+                      "list-project-definitions:"
+                        <> if fromMaybe False includeLibs then "with-libs" else "no-libs"
+                let cacheKey = Cache.branchCacheKey fullBranch kind
+                allEntriesJSON <-
+                  Cache.getOrComputeEMCP cacheKey $ do
+                    out <- handleInputMCP projectContext [Right $ Input.FindI False (FindLocal Path.Root') []]
+                    let entries = parseFindOutput out.outputMessages
+                    let mkEntry (n, sig) = Aeson.object ["name" Aeson..= n, "signature" Aeson..= sig]
+                    pure (Aeson.toJSON (map mkEntry entries))
+                let allEntries = case Aeson.fromJSON allEntriesJSON of
+                      Aeson.Success xs -> xs :: [Aeson.Value]
+                      Aeson.Error _ -> []
+                let total = length allEntries
                 let off = fromMaybe 0 offset
                 let lim = fromMaybe 100 limit
-                let paged = take lim (drop off entries)
-                let mkEntry (n, sig) = Aeson.object ["name" Aeson..= n, "signature" Aeson..= sig]
+                let paged = take lim (drop off allEntries)
                 let result =
                       Aeson.object
-                        [ "definitions" Aeson..= map mkEntry paged,
+                        [ "definitions" Aeson..= paged,
                           "totalCount" Aeson..= total,
                           "offset" Aeson..= off,
                           "limit" Aeson..= lim,
