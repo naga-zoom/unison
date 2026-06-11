@@ -15,6 +15,7 @@ import Unison.Parser.Ann (Ann)
 import Unison.Prelude
 import Unison.Runtime (Runtime)
 import Unison.Symbol (Symbol)
+import UnliftIO.STM (newTVarIO)
 
 serverDescription :: Text
 serverDescription =
@@ -39,6 +40,7 @@ initServer ::
   AuthN.AuthenticatedHttpClient ->
   IO MCP.Server
 initServer codebase runtime sbRuntime workDir ucmVersion authenticatedHTTPClient = do
+  branchCache <- newTVarIO mempty
   let env =
         Env
           { codebase,
@@ -46,7 +48,8 @@ initServer codebase runtime sbRuntime workDir ucmVersion authenticatedHTTPClient
             sbRuntime,
             ucmVersion,
             workDir,
-            authenticatedHTTPClient
+            authenticatedHTTPClient,
+            branchCache
           }
   -- Create server
   let serverInfo = Implementation "unison-mcp" "0.0.1"
