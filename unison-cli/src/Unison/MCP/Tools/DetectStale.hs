@@ -31,10 +31,12 @@ import Unison.Cli.MonadUtils qualified as Cli
 import Unison.Codebase qualified as Codebase
 import Unison.Codebase.Branch (Branch0)
 import Unison.Codebase.Branch qualified as Branch
+import Unison.MCP.Cache qualified as Cache
 import Unison.Codebase.Branch.Names qualified as BranchNames
 import Unison.DataDeclaration qualified as DD
 import Unison.MCP.Cli (cliToMCP)
 import Unison.MCP.Types
+import Unison.MCP.Wire qualified as Wire
 import Unison.MCP.Wrapper
 import Unison.Name (Name)
 import Unison.Names qualified as Names
@@ -43,7 +45,6 @@ import Unison.Prelude
 import Unison.Reference (Reference, TermReference, TypeReference)
 import Unison.Reference qualified as Reference
 import Unison.Referent qualified as Referent
-import Unison.ShortHash qualified as ShortHash
 import Unison.Symbol (Symbol)
 import Unison.Syntax.Name qualified as Name
 import Unison.Term qualified as Term
@@ -121,17 +122,20 @@ detectStaleTool =
       toolHandler = \(DetectStaleToolArguments {projectContext}) -> handleToolError $ do
         codebase <- asks (.codebase)
         let noop _ = pure ()
-        (mb, _output) <- cliToMCP projectContext noop Cli.getCurrentBranch0
-        case mb of
+        (mFullBranch, _output) <- cliToMCP projectContext noop Cli.getCurrentBranch
+        case mFullBranch of
           Nothing -> throwError "No current branch"
-          Just b -> do
-            stale <- UnliftIO.liftIO $ enumerateStale codebase b
-            let response =
-                  DetectStaleResponse
-                    { staleDefs = stale,
-                      totalCount = length stale
-                    }
-            pure $ textToolResult $ Text.decodeUtf8 . BL.toStrict $ Aeson.encode response
+          Just fullBranch -> do
+            let b = Branch.head fullBranch
+            let cacheKey = Cache.branchCacheKey fullBranch "detect-stale"
+            Cache.getOrComputeEMCP cacheKey
+              ( do
+                  stale <- UnliftIO.liftIO $ enumerateStale codebase b
+                  let response = DetectStaleResponse {staleDefs = stale, totalCount = length stale}
+                  pure (Aeson.toJSON response)
+              )
+              >>= \payload ->
+                pure $ textToolResult $ Text.decodeUtf8 . BL.toStrict $ Aeson.encode payload
     }
 
 -- ----------------------------------------------------------------------------
@@ -168,7 +172,7 @@ analyzeTerm codebase nameTable (refnt, n) = case refnt of
               StaleDef
                 { name = Name.toText n,
                   kind = "term",
-                  hash = ShortHash.toText (Referent.toShortHash refnt),
+                  hash = Wire.shortHashText (Referent.toShortHash refnt),
                   unnamedDeps = unnamed
                 }
 
@@ -194,7 +198,7 @@ analyzeType codebase nameTable (typeRef, n) = case typeRef of
             StaleDef
               { name = Name.toText n,
                 kind = "type",
-                hash = ShortHash.toText (Reference.toShortHash typeRef),
+                hash = Wire.shortHashText (Reference.toShortHash typeRef),
                 unnamedDeps = unnamed
               }
 
@@ -205,13 +209,13 @@ analyzeType codebase nameTable (typeRef, n) = case typeRef of
 unnamedFromDefns :: Names.Names -> DefnsF Set TermReference TypeReference -> [UnnamedDep]
 unnamedFromDefns nameTable Defns {terms, types} =
   let staleTerms =
-        [ UnnamedDep {kind = "term", hash = ShortHash.toText (Reference.toShortHash r)}
+        [ UnnamedDep {kind = "term", hash = Wire.shortHashText (Reference.toShortHash r)}
         | r <- Set.toList terms,
           isStaleRef r,
           Set.null (Names.namesForReferent nameTable (Referent.Ref r))
         ]
       staleTypes =
-        [ UnnamedDep {kind = "type", hash = ShortHash.toText (Reference.toShortHash r)}
+        [ UnnamedDep {kind = "type", hash = Wire.shortHashText (Reference.toShortHash r)}
         | r <- Set.toList types,
           isStaleRef r,
           Set.null (Names.namesForReference nameTable r)

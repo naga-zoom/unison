@@ -24,16 +24,17 @@ import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import Unison.Cli.MonadUtils qualified as Cli
 import Unison.Codebase.Branch qualified as Branch
+import Unison.MCP.Cache qualified as Cache
 import Unison.MCP.Cli (cliToMCP)
 import Unison.MCP.Domain.Pattern qualified as Pattern
 import Unison.MCP.Types
+import Unison.MCP.Wire qualified as Wire
 import Unison.MCP.Wrapper
 import Unison.Name (Name)
 import Unison.Prelude
 import Unison.Reference qualified as Reference
 import Unison.Referent (Referent)
 import Unison.Referent qualified as Referent
-import Unison.ShortHash qualified as ShortHash
 import Unison.Syntax.Name qualified as Name
 import Unison.Util.Relation qualified as R
 
@@ -95,14 +96,23 @@ findTool =
           Left err -> throwError $ "Pattern parse error: " <> Text.pack (show err)
           Right pat -> do
             let noop _ = pure ()
-            (mb, _output) <- cliToMCP projectContext noop Cli.getCurrentBranch0
-            case mb of
+            (mFullBranch, _output) <- cliToMCP projectContext noop Cli.getCurrentBranch
+            case mFullBranch of
               Nothing -> throwError "No current branch"
-              Just b -> do
+              Just fullBranch -> do
+                let b = Branch.head fullBranch
                 let projectText = into @Text projectContext.projectName
-                let ms = enumerateMatches pat projectText b
-                let result = FindResult {matches = ms, totalCount = length ms}
-                pure $ textToolResult $ Text.decodeUtf8 . BL.toStrict $ Aeson.encode result
+                -- Cache keyed by (branchHash, query). Same query on the same
+                -- branch hash → reuse enumerated match set without re-walking.
+                let cacheKey = Cache.branchCacheKey fullBranch ("find:" <> query)
+                Cache.getOrComputeEMCP cacheKey
+                  ( do
+                      let ms = enumerateMatches pat projectText b
+                      let result = FindResult {matches = ms, totalCount = length ms}
+                      pure (Aeson.toJSON result)
+                  )
+                  >>= \payload ->
+                    pure $ textToolResult $ Text.decodeUtf8 . BL.toStrict $ Aeson.encode payload
     }
 
 -- ----------------------------------------------------------------------------
@@ -119,7 +129,7 @@ enumerateMatches pat projectText b =
         [ Match
             { name = Name.toText n,
               kind = kindText opKind,
-              hash = ShortHash.toText (Referent.toShortHash ref)
+              hash = Wire.shortHashText (Referent.toShortHash ref)
             }
         | (ref, n) <- R.toList (Branch.deepTerms b),
           let opKind = classifyReferent ref n,
@@ -136,7 +146,7 @@ enumerateMatches pat projectText b =
         [ Match
             { name = Name.toText n,
               kind = "type",
-              hash = ShortHash.toText (Reference.toShortHash ref)
+              hash = Wire.shortHashText (Reference.toShortHash ref)
             }
         | (ref, n) <- R.toList (Branch.deepTypes b),
           let op =
