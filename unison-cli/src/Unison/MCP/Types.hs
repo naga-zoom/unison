@@ -66,6 +66,8 @@ module Unison.MCP.Types
     CrossProjectDependentsToolArguments (..),
     FindAndActToolArguments (..),
     FindAction (..),
+    PipelineToolArguments (..),
+    PipelineStep (..),
     toToolName,
     fromToolName,
   )
@@ -170,6 +172,7 @@ data ToolKind
   | EvalTool
   | CrossProjectDependentsTool
   | FindAndActTool
+  | PipelineTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -227,7 +230,8 @@ kindNameMapping =
       (ReleaseTool, "release"),
       (EvalTool, "eval"),
       (CrossProjectDependentsTool, "cross-project-dependents"),
-      (FindAndActTool, "find-and-act")
+      (FindAndActTool, "find-and-act"),
+      (PipelineTool, "pipeline")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
@@ -2357,6 +2361,56 @@ instance FromJSON FindAndActToolArguments where
     action <- o .: "action"
     dryRun <- o .:? "dryRun"
     pure $ FindAndActToolArguments {projectContext, query, action, dryRun}
+
+data PipelineStep = PipelineStep
+  { tool :: Text,
+    arguments :: Value
+  }
+  deriving (Eq, Show)
+
+instance FromJSON PipelineStep where
+  parseJSON = withObject "PipelineStep" $ \o -> do
+    tool <- o .: "tool"
+    arguments <- o .:? "arguments" .!= object []
+    pure $ PipelineStep {tool, arguments}
+
+data PipelineToolArguments = PipelineToolArguments
+  { steps :: [PipelineStep],
+    stopOnFirstError :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance HasInputSchema PipelineToolArguments where
+  toInputSchema _ =
+    object
+      [ "type" .= ("object" :: Text),
+        "properties"
+          .= object
+            [ "steps"
+                .= object
+                  [ "type" .= ("array" :: Text),
+                    "items"
+                      .= object
+                        [ "type" .= ("object" :: Text),
+                          "properties"
+                            .= object
+                              [ "tool" .= object ["type" .= ("string" :: Text), "description" .= ("MCP tool name." :: Text)],
+                                "arguments" .= object ["type" .= ("object" :: Text), "description" .= ("Arguments for the tool — same shape as a normal tools/call." :: Text)]
+                              ],
+                          "required" .= (["tool"] :: [Text])
+                        ],
+                    "description" .= ("Ordered list of steps. Each step's arguments are the same shape you'd pass to a normal tools/call." :: Text)
+                  ],
+              "stopOnFirstError" .= object ["type" .= ("boolean" :: Text), "description" .= ("Default true. If false, continues through all steps even when one fails." :: Text)]
+            ],
+        "required" .= (["steps"] :: [Text])
+      ]
+
+instance FromJSON PipelineToolArguments where
+  parseJSON = withObject "PipelineToolArguments" $ \o -> do
+    steps <- o .: "steps"
+    stopOnFirstError <- o .:? "stopOnFirstError"
+    pure $ PipelineToolArguments {steps, stopOnFirstError}
 
 nameKindMapping :: Map Text ToolKind
 nameKindMapping =

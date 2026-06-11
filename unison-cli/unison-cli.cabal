@@ -187,6 +187,7 @@ library
       Unison.MCP.Tools.FindAndAct
       Unison.MCP.Tools.LibRefresh
       Unison.MCP.Tools.Merge
+      Unison.MCP.Tools.Pipeline
       Unison.MCP.Tools.Probe
       Unison.MCP.Tools.ProjectCreate
       Unison.MCP.Tools.ProjectRename
