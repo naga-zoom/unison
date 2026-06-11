@@ -780,11 +780,38 @@ instance HasInputSchema ProjectContext where
         "required" .= ["projectName", "branchName" :: Text]
       ]
 
+-- | Accepts two equivalent JSON shapes:
+--
+-- 1. The full object form:
+--    @{"projectName": "temper", "branchName": "main"}@ — ~60 bytes.
+-- 2. The compact-path form:
+--    @"temper:main"@ — ~14 bytes.
+--
+-- The compact form uses @:@ as the project\/branch separator (UCM
+-- project names use @\/@ internally — e.g. @\@unison\/base@ — so a
+-- distinct separator avoids ambiguity with release paths like
+-- @releases\/drafts\/1.0.0@).
+--
+-- This is the cheapest way to cut the per-call projectContext token
+-- cost without introducing server-side state. See
+-- @docs\/mcp-spec-extensions\/session-state-and-cached-resources.md@.
 instance FromJSON ProjectContext where
-  parseJSON = withObject "ProjectContext" $ \o -> do
-    projectName <- UnsafeProjectName <$> o .: "projectName"
-    branchName <- UnsafeProjectBranchName <$> o .: "branchName"
-    pure $ ProjectContext {projectName, branchName}
+  parseJSON v = case v of
+    Object o -> do
+      projectName <- UnsafeProjectName <$> o .: "projectName"
+      branchName <- UnsafeProjectBranchName <$> o .: "branchName"
+      pure $ ProjectContext {projectName, branchName}
+    String s ->
+      case Text.splitOn ":" s of
+        [proj, br] | not (Text.null proj), not (Text.null br) ->
+          pure $
+            ProjectContext
+              { projectName = UnsafeProjectName proj,
+                branchName = UnsafeProjectBranchName br
+              }
+        _ ->
+          fail $ "Compact projectContext must be \"<project>:<branch>\", got: " <> Text.unpack s
+    _ -> fail "Expected projectContext as object or compact \"proj:branch\" string"
 
 instance ToJSON ProjectContext where
   toJSON (ProjectContext (UnsafeProjectName projectName) (UnsafeProjectBranchName branchName)) =
