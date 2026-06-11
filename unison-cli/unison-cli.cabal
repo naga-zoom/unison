@@ -195,7 +195,6 @@ library
       Unison.MCP.Tools.ReapTempBranches
       Unison.MCP.Tools.Release
       Unison.MCP.Tools.SanityFix
-      Unison.MCP.Tools.Session
       Unison.MCP.Tools.SourceRename
       Unison.MCP.Types
       Unison.MCP.Wrapper
