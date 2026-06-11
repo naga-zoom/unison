@@ -418,14 +418,18 @@ test-suite cli-tests
       Unison.Test.Cli.Monad
       Unison.Test.LSP
       Unison.Test.MCP.BranchProtection
+      Unison.Test.MCP.Cache
+      Unison.Test.MCP.CompactPath
       Unison.Test.MCP.CompleteUpdate
       Unison.Test.MCP.DetectStale
       Unison.Test.MCP.Diagnose
       Unison.Test.MCP.Find
       Unison.Test.MCP.Pattern
+      Unison.Test.MCP.Pipeline
       Unison.Test.MCP.Resolution
       Unison.Test.MCP.Structural
       Unison.Test.MCP.Transaction
+      Unison.Test.MCP.Wire
       Unison.Test.Ucm
       Unison.Test.UriParser
   hs-source-dirs:
@@ -471,6 +475,7 @@ test-suite cli-tests
   build-depends:
       aeson
     , base
+    , bytestring
     , code-page
     , containers
     , crypton

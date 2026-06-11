@@ -23,6 +23,7 @@ import Unison.MCP.Domain.Transaction
 import Unison.MCP.Types (MCP, runMCP)
 import qualified Unison.MCP.Types as Types
 import UnliftIO (liftIO)
+import qualified UnliftIO.STM
 
 test :: Test ()
 test =
@@ -39,19 +40,22 @@ test =
 -- ----------------------------------------------------------------------------
 
 runInTest :: MCP a -> IO a
-runInTest m = runMCP fakeEnv m
-  where
-    -- We never use the env in these tests (steps only do IORef stuff),
-    -- so bottoming out is fine. The runtime never reaches these thunks.
-    fakeEnv =
-      Types.Env
-        { Types.codebase = error "fakeEnv.codebase: tests never touch the codebase",
-          Types.runtime = error "fakeEnv.runtime: tests never touch the runtime",
-          Types.sbRuntime = error "fakeEnv.sbRuntime: tests never touch sbRuntime",
-          Types.ucmVersion = "test",
-          Types.workDir = Nothing,
-          Types.authenticatedHTTPClient = error "fakeEnv.http: tests never touch HTTP"
-        }
+runInTest m = do
+  -- branchCache must be a real TVar — even if these tests never touch
+  -- it, MCP.Env construction requires the field. Other fields are
+  -- bottomed-out because the runtime never reaches them.
+  branchCache <- UnliftIO.STM.newTVarIO mempty
+  let fakeEnv =
+        Types.Env
+          { Types.codebase = error "fakeEnv.codebase: tests never touch the codebase",
+            Types.runtime = error "fakeEnv.runtime: tests never touch the runtime",
+            Types.sbRuntime = error "fakeEnv.sbRuntime: tests never touch sbRuntime",
+            Types.ucmVersion = "test",
+            Types.workDir = Nothing,
+            Types.authenticatedHTTPClient = error "fakeEnv.http: tests never touch HTTP",
+            Types.branchCache = branchCache
+          }
+  runMCP fakeEnv m
 
 mkLog :: IO (IORef [Text], Text -> MCP ())
 mkLog = do
