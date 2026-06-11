@@ -172,10 +172,12 @@ library
       Unison.MCP.Domain.Resolution
       Unison.MCP.Domain.Structural
       Unison.MCP.Domain.Transaction
+      Unison.MCP.Log
       Unison.MCP.Prompts
       Unison.MCP.Server
       Unison.MCP.Share.API
       Unison.MCP.StaticResources
+      Unison.MCP.Stats
       Unison.MCP.Tools
       Unison.MCP.Tools.BranchDelete
       Unison.MCP.Tools.CompleteUpdate
@@ -198,6 +200,7 @@ library
       Unison.MCP.Tools.Release
       Unison.MCP.Tools.SanityFix
       Unison.MCP.Tools.SourceRename
+      Unison.MCP.Tools.Stats
       Unison.MCP.Types
       Unison.MCP.Wire
       Unison.MCP.Wrapper

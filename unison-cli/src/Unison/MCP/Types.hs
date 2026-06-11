@@ -93,6 +93,8 @@ import Unison.Runtime (Runtime)
 import Unison.Symbol (Symbol)
 import Unison.Syntax.Name qualified as Name
 import Unison.Syntax.NameSegment qualified as NameSegment
+import Colog.Core (Severity)
+import Unison.MCP.Stats (Stats)
 import UnliftIO.STM qualified
 
 data Env = Env
@@ -106,7 +108,15 @@ data Env = Env
     -- @(causalHashText, resourceKindText)@; entries become unreachable
     -- when the branch causal hash changes (no invalidation logic
     -- needed). See 'Unison.MCP.Cache'.
-    branchCache :: UnliftIO.STM.TVar (Map (Text, Text) Value)
+    branchCache :: UnliftIO.STM.TVar (Map (Text, Text) Value),
+    -- | Per-tool counters + cache hit/miss accumulators. Queryable via
+    -- the @stats@ MCP tool. See 'Unison.MCP.Stats'.
+    stats :: Stats,
+    -- | Current log-severity threshold for stderr emission. Set at
+    -- start via @UCM_MCP_LOG_LEVEL@. Uses Colog's 'Severity' enum so
+    -- the MCP logging shares a framework with UCM's LSP logging. See
+    -- 'Unison.MCP.Log'.
+    logLevel :: Severity
   }
 
 newtype MCP a = MCP
@@ -173,6 +183,7 @@ data ToolKind
   | CrossProjectDependentsTool
   | FindAndActTool
   | PipelineTool
+  | StatsTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -231,7 +242,8 @@ kindNameMapping =
       (EvalTool, "eval"),
       (CrossProjectDependentsTool, "cross-project-dependents"),
       (FindAndActTool, "find-and-act"),
-      (PipelineTool, "pipeline")
+      (PipelineTool, "pipeline"),
+      (StatsTool, "stats")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument

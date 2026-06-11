@@ -8,6 +8,7 @@ module Unison.MCP.Wrapper
     Prompt (..),
     HasInputSchema (..),
     mkServer,
+    CallRecorder,
     CallToolResult (..),
     PromptArgument (..),
     StaticResources,
@@ -33,6 +34,7 @@ import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.Data (Proxy)
 import Data.Map qualified as Map
 import Data.Text qualified as Text
+import GHC.Clock (getMonotonicTimeNSec)
 import Network.MCP.Server
 import Network.MCP.Types (CallToolResult (CallToolResult))
 import Network.MCP.Types qualified as MCP
@@ -77,8 +79,22 @@ data PromptArgument = PromptArgument
     promptArgumentRequired :: Bool
   }
 
-mkServer :: (MonadUnliftIO m) => MCP.ServerInfo -> Text -> StaticResources -> [Tool m] -> [Prompt m] -> m Server
-mkServer serverInfo serverDescription staticResources tools prompts = do
+-- | Hook fired on every @tools/call@ /after/ the handler returns.
+-- @CallRecorder toolName isError elapsedNanos@. Use this to track
+-- per-tool statistics + emit logs. Pass @\\_ _ _ -> pure ()@ for a
+-- no-op recorder.
+type CallRecorder m = Text -> Bool -> Integer -> m ()
+
+mkServer ::
+  (MonadUnliftIO m) =>
+  MCP.ServerInfo ->
+  Text ->
+  StaticResources ->
+  [Tool m] ->
+  [Prompt m] ->
+  CallRecorder m ->
+  m Server
+mkServer serverInfo serverDescription staticResources tools prompts recordCall = do
   let serverCapabilities =
         MCP.ServerCapabilities
           { resourcesCapability = Just $ MCP.ResourcesCapability (not $ Map.null staticResources),
@@ -88,7 +104,7 @@ mkServer serverInfo serverDescription staticResources tools prompts = do
   server <- liftIO $ createServer serverInfo serverCapabilities serverDescription
 
   doResources server staticResources
-  doTools server tools
+  doTools server tools recordCall
   doPrompts server prompts
 
   pure server
@@ -117,8 +133,8 @@ getMcpTimeoutMicroseconds = liftIO $ do
     Just str -> maybe (defaultMcpTimeoutSeconds * 1_000_000) (* 1_000_000) (readMaybe str)
     Nothing -> defaultMcpTimeoutSeconds * 1_000_000
 
-doTools :: (MonadUnliftIO m) => Server -> [Tool m] -> m ()
-doTools server tools = do
+doTools :: (MonadUnliftIO m) => Server -> [Tool m] -> CallRecorder m -> m ()
+doTools server tools recordCall = do
   runInIO <- askRunInIO
   timeoutMicros <- getMcpTimeoutMicroseconds
   let timeoutSeconds = timeoutMicros `div` 1_000_000
@@ -133,15 +149,19 @@ doTools server tools = do
             }
   liftIO $ registerTools server mcpTools
   liftIO $ registerToolCallHandler server \(MCP.CallToolRequest {callToolName, callToolArguments}) -> runInIO $ do
-    case Map.lookup callToolName toolMap of
+    t0 <- liftIO getMonotonicTimeNSec
+    result <- case Map.lookup callToolName toolMap of
       Just Tool {toolHandler} -> do
         case Aeson.fromJSON callToolArguments of
           Aeson.Success arg ->
             UnliftIO.timeout timeoutMicros (toolHandler arg) >>= \case
               Nothing -> pure $ errorToolResult $ "Tool '" <> callToolName <> "' timed out after " <> Text.pack (show timeoutSeconds) <> " seconds."
-              Just result -> pure result
+              Just r -> pure r
           Aeson.Error err -> pure $ errorToolResult $ "Failed to parse arguments for tool '" <> callToolName <> "': " <> Text.pack err
       Nothing -> pure $ errorToolResult $ "Tool '" <> callToolName <> "' not found."
+    t1 <- liftIO getMonotonicTimeNSec
+    recordCall callToolName (MCP.callToolIsError result) (toInteger (t1 - t0))
+    pure result
 
 errorToolResult :: Text -> MCP.CallToolResult
 errorToolResult errMsg =
