@@ -46,6 +46,8 @@ import U.Codebase.HashTags (CausalHash (..))
 import Unison.Codebase.Branch (Branch)
 import Unison.Codebase.Branch qualified as Branch
 import Unison.Hash32 qualified as Hash32
+import Unison.MCP.Log qualified as Log
+import Unison.MCP.Stats qualified as Stats
 import Unison.MCP.Types
 import Unison.Prelude
 import UnliftIO.STM (atomically, modifyTVar', readTVarIO)
@@ -66,10 +68,19 @@ branchCacheKey b kind =
 getOrCompute :: BranchCacheKey -> MCP Aeson.Value -> MCP Aeson.Value
 getOrCompute key compute = do
   cacheTVar <- asks (.branchCache)
+  statsRef <- asks (.stats)
+  threshold <- asks (.logLevel)
   m <- readTVarIO cacheTVar
   case Map.lookup key m of
-    Just v -> pure v
+    Just v -> do
+      liftIO $ Stats.recordCacheHit statsRef
+      Log.logAt threshold Log.Debug $
+        "cache hit  " <> fst key <> "/" <> snd key
+      pure v
     Nothing -> do
+      liftIO $ Stats.recordCacheMiss statsRef
+      Log.logAt threshold Log.Debug $
+        "cache miss " <> fst key <> "/" <> snd key <> " — computing"
       v <- compute
       atomically $ modifyTVar' cacheTVar (Map.insert key v)
       pure v
@@ -83,10 +94,19 @@ getOrComputeEMCP ::
   ExceptT Text MCP Aeson.Value
 getOrComputeEMCP key compute = do
   cacheTVar <- lift (asks (.branchCache))
+  statsRef <- lift (asks (.stats))
+  threshold <- lift (asks (.logLevel))
   m <- readTVarIO cacheTVar
   case Map.lookup key m of
-    Just v -> pure v
+    Just v -> do
+      liftIO $ Stats.recordCacheHit statsRef
+      Log.logAt threshold Log.Debug $
+        "cache hit  " <> fst key <> "/" <> snd key
+      pure v
     Nothing -> do
+      liftIO $ Stats.recordCacheMiss statsRef
+      Log.logAt threshold Log.Debug $
+        "cache miss " <> fst key <> "/" <> snd key <> " — computing"
       v <- compute
       atomically $ modifyTVar' cacheTVar (Map.insert key v)
       pure v

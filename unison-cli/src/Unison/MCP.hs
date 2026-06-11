@@ -6,10 +6,15 @@ import Network.MCP.Types
 import Text.RawString.QQ (r)
 import Unison.Auth.HTTPClient qualified as AuthN
 import Unison.Codebase (Codebase)
+import Colog.Core (Severity (..))
+import Unison.MCP.Log (logAt, parseSeverity)
 import Unison.MCP.Prompts (prompts)
+import Unison.MCP.Stats (newStats, recordToolCall)
 import Unison.MCP.StaticResources (staticResources)
 import Unison.MCP.Tools (tools)
 import Unison.MCP.Types
+import Data.Text qualified as Text
+import UnliftIO.Environment (lookupEnv)
 import Unison.MCP.Wrapper qualified as MCPWrapper
 import Unison.Parser.Ann (Ann)
 import Unison.Prelude
@@ -41,6 +46,13 @@ initServer ::
   IO MCP.Server
 initServer codebase runtime sbRuntime workDir ucmVersion authenticatedHTTPClient = do
   branchCache <- newTVarIO mempty
+  stats <- newStats
+  logLevel <- do
+    raw <- lookupEnv "UCM_MCP_LOG_LEVEL"
+    pure $ case raw >>= parseSeverity . Text.pack of
+      Just lvl -> lvl
+      Nothing -> Info
+  logAt logLevel Info $ "ucm-mcp starting; log-level=" <> Text.pack (show logLevel)
   let env =
         Env
           { codebase,
@@ -49,12 +61,23 @@ initServer codebase runtime sbRuntime workDir ucmVersion authenticatedHTTPClient
             ucmVersion,
             workDir,
             authenticatedHTTPClient,
-            branchCache
+            branchCache,
+            stats,
+            logLevel
           }
   -- Create server
   let serverInfo = Implementation "unison-mcp" "0.0.1"
 
-  runMCP env $ MCPWrapper.mkServer serverInfo serverDescription staticResources tools prompts
+  let recorder name isErr nanos = do
+        liftIO $ recordToolCall stats name isErr nanos
+        let durMs = nanos `div` 1_000_000
+        logAt logLevel Info $
+          "tool "
+            <> name
+            <> (if isErr then " FAIL " else " ok    ")
+            <> Text.pack (show durMs)
+            <> "ms"
+  runMCP env $ MCPWrapper.mkServer serverInfo serverDescription staticResources tools prompts recorder
 
 -- | Run the MCP server until we hit EOF.
 runOnStdIO ::

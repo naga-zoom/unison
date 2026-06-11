@@ -46,6 +46,7 @@ import Unison.MCP.Tools.Diagnose (diagnoseTool)
 import Unison.MCP.Tools.Find (findTool)
 import Unison.MCP.Tools.FindAndAct (findAndActTool)
 import Unison.MCP.Tools.Pipeline (pipelineTool)
+import Unison.MCP.Tools.Stats (statsTool)
 import Unison.MCP.Tools.Merge (mergeTool)
 import Unison.MCP.Tools.Probe (probeTool)
 import Unison.MCP.Tools.ProjectCreate (projectCreateTool)
@@ -136,7 +137,8 @@ baseToolsList =
     releaseTool,
     evalTool,
     crossProjectDependentsTool,
-    findAndActTool
+    findAndActTool,
+    statsTool
   ]
 
 currentProjectContext :: (MonadIO m, MonadReader Env m) => m ProjectContext
