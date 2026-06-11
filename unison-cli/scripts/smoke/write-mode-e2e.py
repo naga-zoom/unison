@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 
-PROJECT = 'mcp-write-smoke'
+PROJECT = f'mcp-write-smoke-{int(time.time())}'
 MCP = '/Users/nagarjunapamu/.local/bin/ucm'
 
 

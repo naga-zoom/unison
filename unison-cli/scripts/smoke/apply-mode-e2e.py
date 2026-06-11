@@ -14,10 +14,11 @@ Uses throwaway projects so the smoke is reproducible.
 import json
 import subprocess
 import sys
+import time
 
 MCP = '/Users/nagarjunapamu/.local/bin/ucm'
-PROJ_A = 'mcp-apply-smoke-e'
-PROJ_B = 'mcp-apply-smoke-f'
+PROJ_A = f'mcp-apply-smoke-{int(time.time())}-a'
+PROJ_B = f'mcp-apply-smoke-{int(time.time())}-b'
 
 
 def session(calls, timeout=300):

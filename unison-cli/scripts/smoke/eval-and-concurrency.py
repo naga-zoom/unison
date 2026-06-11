@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 
-PROJECT = 'mcp-write-smoke'
+PROJECT = f'mcp-write-smoke-{int(time.time())}'
 MCP = '/Users/nagarjunapamu/.local/bin/ucm'
 
 
@@ -62,8 +62,16 @@ def check(label, condition, detail=''):
 
 ctx = f'{PROJECT}:main'
 
+# ─────────── Setup (self-contained — creates the project per run) ───────────
+print(f'=== Setup ({PROJECT}) ===')
+setup = session([
+    ('project-create', {'projectContext': 'temper:main',
+                        'projectName': PROJECT, 'downloadBase': True}),
+])
+check('project-create', not setup[0][1])
+
 # ─────────── 1. eval freshness across mutation ───────────
-print('=== eval freshness across mutation ===')
+print('\n=== eval freshness across mutation ===')
 print('  (each `eval x` should reflect the CURRENT branch state, never a stale value)')
 
 # First ensure baseline definition exists
