@@ -45,6 +45,7 @@ import Unison.MCP.Tools.DetectStale (detectStaleTool)
 import Unison.MCP.Tools.Diagnose (diagnoseTool)
 import Unison.MCP.Tools.Find (findTool)
 import Unison.MCP.Tools.FindAndAct (findAndActTool)
+import Unison.MCP.Tools.Pipeline (pipelineTool)
 import Unison.MCP.Tools.Merge (mergeTool)
 import Unison.MCP.Tools.Probe (probeTool)
 import Unison.MCP.Tools.ProjectCreate (projectCreateTool)
@@ -78,6 +79,12 @@ type EMCP = ExceptT MCPError MCP
 
 tools :: [MCPWrapper.Tool MCP]
 tools =
+  let baseTools = baseToolsList
+      registry = Map.fromList ((\t -> (MCPWrapper.toolName t, t)) <$> baseTools)
+   in baseTools <> [pipelineTool registry]
+
+baseToolsList :: [MCPWrapper.Tool MCP]
+baseToolsList =
   [ installLibTool,
     shareProjectSearchTool,
     shareProjectInfoTool,

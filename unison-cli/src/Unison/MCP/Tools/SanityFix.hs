@@ -69,6 +69,11 @@ sanityFixTool =
         branch <- case mb of
           Nothing -> Control.Monad.Except.throwError "No current branch"
           Just b -> pure b
+        -- Note: sanity-fix's scanBranch result isn't currently cached
+        -- because Suggestion-derivation needs the typed StructuralIssue
+        -- values, not just their JSON rendering. Caching here would
+        -- require ToJSON/FromJSON round-trip; deferred. The diagnose
+        -- tool DOES cache its scan (it only needs JSON output).
         issues <- UnliftIO.liftIO $ scanBranch codebase branch
         let suggested = mapMaybe suggestedFix issues
         applied <-
