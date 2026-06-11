@@ -8,6 +8,7 @@ module Unison.MCP.Wrapper
     Prompt (..),
     HasInputSchema (..),
     mkServer,
+    ArgsPreprocessor,
     CallToolResult (..),
     PromptArgument (..),
     StaticResources,
@@ -77,8 +78,16 @@ data PromptArgument = PromptArgument
     promptArgumentRequired :: Bool
   }
 
-mkServer :: (MonadUnliftIO m) => MCP.ServerInfo -> Text -> StaticResources -> [Tool m] -> [Prompt m] -> m Server
-mkServer serverInfo serverDescription staticResources tools prompts = do
+-- | Hook fired on every @tools/call@ before the tool's FromJSON runs.
+-- The first argument is the tool's name and the second is the raw
+-- JSON args object; the result replaces the args. Use 'pure . id' for
+-- a no-op preprocessor. See ucm-mcp's
+-- @sessionContextPreprocessor@ for an example that injects session
+-- defaults.
+type ArgsPreprocessor m = Text -> Aeson.Value -> m Aeson.Value
+
+mkServer :: (MonadUnliftIO m) => MCP.ServerInfo -> Text -> StaticResources -> [Tool m] -> [Prompt m] -> ArgsPreprocessor m -> m Server
+mkServer serverInfo serverDescription staticResources tools prompts argsPreprocess = do
   let serverCapabilities =
         MCP.ServerCapabilities
           { resourcesCapability = Just $ MCP.ResourcesCapability (not $ Map.null staticResources),
@@ -88,7 +97,7 @@ mkServer serverInfo serverDescription staticResources tools prompts = do
   server <- liftIO $ createServer serverInfo serverCapabilities serverDescription
 
   doResources server staticResources
-  doTools server tools
+  doTools server tools argsPreprocess
   doPrompts server prompts
 
   pure server
@@ -117,8 +126,8 @@ getMcpTimeoutMicroseconds = liftIO $ do
     Just str -> maybe (defaultMcpTimeoutSeconds * 1_000_000) (* 1_000_000) (readMaybe str)
     Nothing -> defaultMcpTimeoutSeconds * 1_000_000
 
-doTools :: (MonadUnliftIO m) => Server -> [Tool m] -> m ()
-doTools server tools = do
+doTools :: (MonadUnliftIO m) => Server -> [Tool m] -> ArgsPreprocessor m -> m ()
+doTools server tools argsPreprocess = do
   runInIO <- askRunInIO
   timeoutMicros <- getMcpTimeoutMicroseconds
   let timeoutSeconds = timeoutMicros `div` 1_000_000
@@ -135,7 +144,8 @@ doTools server tools = do
   liftIO $ registerToolCallHandler server \(MCP.CallToolRequest {callToolName, callToolArguments}) -> runInIO $ do
     case Map.lookup callToolName toolMap of
       Just Tool {toolHandler} -> do
-        case Aeson.fromJSON callToolArguments of
+        processedArgs <- argsPreprocess callToolName callToolArguments
+        case Aeson.fromJSON processedArgs of
           Aeson.Success arg ->
             UnliftIO.timeout timeoutMicros (toolHandler arg) >>= \case
               Nothing -> pure $ errorToolResult $ "Tool '" <> callToolName <> "' timed out after " <> Text.pack (show timeoutSeconds) <> " seconds."

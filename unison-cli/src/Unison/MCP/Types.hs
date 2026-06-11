@@ -91,6 +91,7 @@ import Unison.Runtime (Runtime)
 import Unison.Symbol (Symbol)
 import Unison.Syntax.Name qualified as Name
 import Unison.Syntax.NameSegment qualified as NameSegment
+import UnliftIO.STM qualified
 
 data Env = Env
   { codebase :: Codebase IO Symbol Ann,
@@ -98,7 +99,12 @@ data Env = Env
     sbRuntime :: Runtime Symbol,
     ucmVersion :: UCMVersion,
     workDir :: Maybe FilePath,
-    authenticatedHTTPClient :: AuthenticatedHttpClient
+    authenticatedHTTPClient :: AuthenticatedHttpClient,
+    -- | Optional session-scoped default 'ProjectContext'. When set, tools
+    -- that take a @projectContext@ field can omit it and the dispatcher
+    -- will inject the session value before deserializing. See
+    -- 'docs/mcp-spec-extensions/session-state-and-cached-resources.md'.
+    sessionContext :: UnliftIO.STM.TVar (Maybe ProjectContext)
   }
 
 newtype MCP a = MCP
@@ -164,6 +170,9 @@ data ToolKind
   | EvalTool
   | CrossProjectDependentsTool
   | FindAndActTool
+  | SetSessionContextTool
+  | GetSessionContextTool
+  | ClearSessionContextTool
   deriving (Eq, Ord, Show, Bounded, Enum)
 
 kindNameMapping :: Map ToolKind Text
@@ -221,7 +230,10 @@ kindNameMapping =
       (ReleaseTool, "release"),
       (EvalTool, "eval"),
       (CrossProjectDependentsTool, "cross-project-dependents"),
-      (FindAndActTool, "find-and-act")
+      (FindAndActTool, "find-and-act"),
+      (SetSessionContextTool, "set-session-context"),
+      (GetSessionContextTool, "get-session-context"),
+      (ClearSessionContextTool, "clear-session-context")
     ]
 
 data ProjectDefinitionNameArgument = ProjectDefinitionNameArgument
