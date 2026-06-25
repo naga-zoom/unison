@@ -862,7 +862,26 @@ deleteDefinitionsTool :: Tool MCP
 deleteDefinitionsTool =
   Tool
     { toolName = toToolName DeleteDefinitionsTool,
-      toolDescription = "Delete one or more definitions (terms or types) from the codebase.",
+      toolDescription =
+        "Delete one or more named terms or types from the codebase. \
+        \Removes the name binding; the underlying definition is GC'd if \
+        \no other names point to it. \
+        \UCM auto-refuses the delete if dependents exist in the current \
+        \project (outside lib.*). For library-surface defs likely to be \
+        \used by OTHER local projects, chain `cross-project-dependents` \
+        \first (compose both via `pipeline` for an atomic check+delete). \
+        \Pass `force: true` to skip the same-project safety check. \
+        \\nResponse shape on dependent-blocked refusal: the response carries \
+        \the dependents source in `sourceCodeUpdates` (so caller sees \
+        \exactly what's blocking the delete) plus an explanatory \
+        \`errorMessages` entry. UCM also creates an `update-*` temp branch \
+        \as a side effect; clean it up with `cancel` (target the temp \
+        \branch's projectContext) once you've read the dependents list. \
+        \See also: `delete-namespace` (drop a whole subtree), \
+        \`branch-delete` (drop a branch), `list-definition-dependents` \
+        \(in-project impact), `cross-project-dependents` (impact across all \
+        \local projects), `cancel` (clean up the dependents-blocked temp \
+        \branch).",
       toolAnnotations =
         ToolAnnotations
           { title = Just "Delete Definitions",
@@ -878,7 +897,23 @@ deleteDefinitionsTool =
             pure $ errorToolResult "No names provided to delete"
           Just nonEmptyNames -> do
             let names' = HQ'.NameOnly <$> NEL.toList nonEmptyNames
-            output <- handleInputMCP projectContext [Right $ Input.DeleteI force Input.DeleteTarget'TermOrType names']
+            -- When force=False and the target has dependents, UCM's
+            -- handleDelete calls expectLatestFile to write the
+            -- "dependents that need updating" scratch. MCP mode has no
+            -- loaded scratch, so without prep that surfaces as the
+            -- misleading NoUnisonFile message ("There's nothing for me
+            -- to add right now"). Prep a virtual scratch so the write
+            -- lands in MCP's sourceCodeUpdates instead — caller then
+            -- sees the actual delete-blocked-by-dependents content.
+            -- force=True doesn't touch latestFile; skip the prep.
+            let inputs =
+                  if force
+                    then [Right $ Input.DeleteI True Input.DeleteTarget'TermOrType names']
+                    else
+                      [ Left (Input.UnisonFileChanged virtualSourceName ""),
+                        Right $ Input.DeleteI False Input.DeleteTarget'TermOrType names'
+                      ]
+            output <- handleInputMCP projectContext inputs
             let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode output
             pure $ textToolResult outputJSON
     }
