@@ -97,6 +97,56 @@ import Colog.Core (Severity)
 import Unison.MCP.Stats (Stats)
 import UnliftIO.STM qualified
 
+-- ----------------------------------------------------------------------------
+-- Safe-parse helpers for FromJSON instances.
+-- ----------------------------------------------------------------------------
+--
+-- Replace 'Name.unsafeParseText' / 'NameSegment.unsafeParseText' /
+-- 'Path.unsafeParseText[\']' (all 'HasCallStack' panics on invalid input)
+-- with these in 'FromJSON' instances of MCP tool argument records.
+--
+-- Without the safe path, an invalid identifier from the caller (e.g.
+-- @foo-bar@, where the hyphen is a binary operator and not a name char)
+-- crashes via 'HasCallStack', and the JSON-RPC layer wraps the crash as
+-- a server-side @code: -32603@ error — not the typed MCP "invalid
+-- argument" error the spec expects. Callers (especially LLM agents)
+-- can't recover with a structured retry.
+--
+-- These helpers call the existing 'parseText' (Maybe / Either) variants
+-- and 'fail' on a parse miss, so the Aeson layer reports a clean
+-- "Failed to parse arguments" error that the MCP wrapper turns into
+-- 'errorToolResult'.
+
+parseNameJSON :: Text -> Parser Name
+parseNameJSON t = case Name.parseText t of
+  Just n -> pure n
+  Nothing ->
+    fail $
+      "invalid name: " <> Text.unpack t
+        <> " — names must be valid Unison identifiers (letters, digits, "
+        <> "underscores, dots; no hyphens)."
+
+parseNameSegmentJSON :: Text -> Parser NameSegment
+parseNameSegmentJSON t = case NameSegment.parseText t of
+  Right s -> pure s
+  Left err ->
+    fail $ "invalid name segment: " <> Text.unpack t <> " — " <> Text.unpack err
+
+parsePathJSON :: Text -> Parser Path.Path
+parsePathJSON = \case
+  "" -> pure mempty
+  t -> case Name.parseText t of
+    Just n -> pure (Path.fromName n)
+    Nothing -> fail $ "invalid namespace path: " <> Text.unpack t
+
+parsePathJSON' :: Text -> Parser Path.Path'
+parsePathJSON' = \case
+  "" -> pure (Path.RelativePath' mempty)
+  "." -> pure (Path.AbsolutePath' (Path.Absolute mempty))
+  t -> case Name.parseText t of
+    Just n -> pure (Path.fromName' n)
+    Nothing -> fail $ "invalid namespace path: " <> Text.unpack t
+
 data Env = Env
   { codebase :: Codebase IO Symbol Ann,
     runtime :: Runtime Symbol,
@@ -427,7 +477,7 @@ instance FromJSON ViewDefinitionsToolArguments where
   parseJSON = withObject "ViewDefinitionsToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
     namesRaw <- o .:? "names"
-    let names = maybe [] (map Name.unsafeParseText) namesRaw
+    names <- maybe (pure []) (traverse parseNameJSON) namesRaw
     hashes <- fromMaybe [] <$> o .:? "hashes"
     signaturesOnly <- o .:? "signaturesOnly"
     withDirectDeps <- o .:? "withDirectDeps"
@@ -690,7 +740,7 @@ instance HasInputSchema DocsToolArguments where
 instance FromJSON DocsToolArguments where
   parseJSON = withObject "DocsToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    name <- Name.unsafeParseText <$> o .: "name"
+    name <- o .: "name" >>= parseNameJSON
     pure $ DocsToolArguments {projectContext, name}
 
 data RunToolArguments = RunToolArguments
@@ -956,7 +1006,7 @@ instance HasInputSchema TestToolArguments where
 instance FromJSON TestToolArguments where
   parseJSON = withObject "TestToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    subnamespace <- fmap Path.unsafeParseText <$> (o .:? "subnamespace")
+    subnamespace <- o .:? "subnamespace" >>= traverse parsePathJSON
     pure $ TestToolArguments {projectContext, subnamespace}
 
 data DeleteDefinitionsToolArguments = DeleteDefinitionsToolArguments
@@ -995,7 +1045,7 @@ instance HasInputSchema DeleteDefinitionsToolArguments where
 instance FromJSON DeleteDefinitionsToolArguments where
   parseJSON = withObject "DeleteDefinitionsToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    names <- fmap Name.unsafeParseText <$> o .: "names"
+    names <- o .: "names" >>= traverse parseNameJSON
     force <- o .:? "force" .!= False
     pure $ DeleteDefinitionsToolArguments {projectContext, names, force}
 
@@ -1042,13 +1092,13 @@ instance FromJSON RenameDefinitionToolArguments where
         parsed <- traverse parseRename bulkObjs
         pure $ RenameDefinitionToolArguments {projectContext, renames = parsed}
       Nothing -> do
-        oldName <- Name.unsafeParseText <$> o .: "oldName"
-        newNameSegment <- NameSegment.unsafeParseText <$> o .: "newNameSegment"
+        oldName <- o .: "oldName" >>= parseNameJSON
+        newNameSegment <- o .: "newNameSegment" >>= parseNameSegmentJSON
         pure $ RenameDefinitionToolArguments {projectContext, renames = [(oldName, newNameSegment)]}
     where
       parseRename = withObject "Rename pair" $ \r -> do
-        oldN <- Name.unsafeParseText <$> r .: "oldName"
-        newSeg <- NameSegment.unsafeParseText <$> r .: "newNameSegment"
+        oldN <- r .: "oldName" >>= parseNameJSON
+        newSeg <- r .: "newNameSegment" >>= parseNameSegmentJSON
         pure (oldN, newSeg)
 
 data MoveDefinitionToolArguments = MoveDefinitionToolArguments
@@ -1094,13 +1144,13 @@ instance FromJSON MoveDefinitionToolArguments where
         parsed <- traverse parseMove bulkObjs
         pure $ MoveDefinitionToolArguments {projectContext, moves = parsed}
       Nothing -> do
-        oldName <- Name.unsafeParseText <$> o .: "oldName"
-        newName <- Name.unsafeParseText <$> o .: "newName"
+        oldName <- o .: "oldName" >>= parseNameJSON
+        newName <- o .: "newName" >>= parseNameJSON
         pure $ MoveDefinitionToolArguments {projectContext, moves = [(oldName, newName)]}
     where
       parseMove = withObject "Move pair" $ \m -> do
-        oldN <- Name.unsafeParseText <$> m .: "oldName"
-        newN <- Name.unsafeParseText <$> m .: "newName"
+        oldN <- m .: "oldName" >>= parseNameJSON
+        newN <- m .: "newName" >>= parseNameJSON
         pure (oldN, newN)
 
 data MoveToToolArguments = MoveToToolArguments
@@ -1140,8 +1190,8 @@ instance HasInputSchema MoveToToolArguments where
 instance FromJSON MoveToToolArguments where
   parseJSON = withObject "MoveToToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    sources <- fmap Path.unsafeParseText' <$> o .: "sources"
-    destination <- Path.unsafeParseText' <$> o .: "destination"
+    sources <- o .: "sources" >>= traverse parsePathJSON'
+    destination <- o .: "destination" >>= parsePathJSON'
     pure $ MoveToToolArguments {projectContext, sources, destination}
 
 data DeleteNamespaceToolArguments = DeleteNamespaceToolArguments
@@ -1175,7 +1225,7 @@ instance HasInputSchema DeleteNamespaceToolArguments where
 instance FromJSON DeleteNamespaceToolArguments where
   parseJSON = withObject "DeleteNamespaceToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    namespaceName <- Name.unsafeParseText <$> o .: "namespaceName"
+    namespaceName <- o .: "namespaceName" >>= parseNameJSON
     force <- o .:? "force" .!= False
     pure $ DeleteNamespaceToolArguments {projectContext, namespaceName, force}
 
@@ -1352,7 +1402,7 @@ instance HasInputSchema CompileToolArguments where
 instance FromJSON CompileToolArguments where
   parseJSON = withObject "CompileToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    mainFunctionName <- Name.unsafeParseText <$> o .: "mainFunctionName"
+    mainFunctionName <- o .: "mainFunctionName" >>= parseNameJSON
     outputPath <- o .: "outputPath"
     pure $ CompileToolArguments {projectContext, mainFunctionName, outputPath}
 
@@ -1958,7 +2008,7 @@ instance HasInputSchema SourceRenameToolArguments where
 instance FromJSON SourceRenameToolArguments where
   parseJSON = withObject "SourceRenameToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    names <- fmap Name.unsafeParseText <$> o .: "names"
+    names <- o .: "names" >>= traverse parseNameJSON
     renames <- fromMaybe [] <$> o .:? "renames"
     pure $ SourceRenameToolArguments {projectContext, names, renames}
 
@@ -2039,9 +2089,9 @@ instance HasInputSchema CrossProjectMoveToolArguments where
 instance FromJSON CrossProjectMoveToolArguments where
   parseJSON = withObject "CrossProjectMoveToolArguments" $ \o -> do
     srcContext <- o .: "srcContext"
-    srcName <- Name.unsafeParseText <$> o .: "srcName"
+    srcName <- o .: "srcName" >>= parseNameJSON
     destContext <- o .: "destContext"
-    destName <- fmap Name.unsafeParseText <$> o .:? "destName"
+    destName <- o .:? "destName" >>= traverse parseNameJSON
     dryRun <- o .:? "dryRun"
     pure $ CrossProjectMoveToolArguments {srcContext, srcName, destContext, destName, dryRun}
 
@@ -2099,7 +2149,7 @@ instance HasInputSchema ReanchorToolArguments where
 instance FromJSON ReanchorToolArguments where
   parseJSON = withObject "ReanchorToolArguments" $ \o -> do
     projectContext <- o .: "projectContext"
-    names <- fmap Name.unsafeParseText <$> o .: "names"
+    names <- o .: "names" >>= traverse parseNameJSON
     mappings <- o .: "mappings"
     pure $ ReanchorToolArguments {projectContext, names, mappings}
 
@@ -2314,7 +2364,7 @@ instance HasInputSchema CrossProjectDependentsToolArguments where
 
 instance FromJSON CrossProjectDependentsToolArguments where
   parseJSON = withObject "CrossProjectDependentsToolArguments" $ \o -> do
-    definitionName <- Name.unsafeParseText <$> o .: "definitionName"
+    definitionName <- o .: "definitionName" >>= parseNameJSON
     projects <- o .:? "projects"
     branchName <- o .:? "branchName"
     pure $ CrossProjectDependentsToolArguments {definitionName, projects, branchName}
@@ -2330,7 +2380,7 @@ instance FromJSON FindAction where
     case typ of
       "delete" -> pure FindActionDelete
       "move-to" -> do
-        dst <- Name.unsafeParseText <$> o .: "destNamespace"
+        dst <- o .: "destNamespace" >>= parseNameJSON
         pure (FindActionMoveTo dst)
       other -> fail $ "Unknown find-and-act action type: " <> Text.unpack other
 
