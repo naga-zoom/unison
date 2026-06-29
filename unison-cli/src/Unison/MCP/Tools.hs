@@ -915,7 +915,13 @@ deleteDefinitionsTool =
                       ]
             output <- handleInputMCP projectContext inputs
             let outputJSON = Text.decodeUtf8 . BL.toStrict $ Aeson.encode output
-            pure $ textToolResult outputJSON
+            -- Route UCM-level failure to the MCP envelope: if UCM produced
+            -- any failure outputs (dependents-block, missing name,
+            -- can't-delete-constructor — all isFailure=True in Output.hs),
+            -- they're in CliOutput.errorMessages. Reflect that as
+            -- callToolIsError=true so MCP callers can dispatch on the
+            -- envelope without parsing the JSON payload.
+            pure $ textToolResultIsError (not (null output.errorMessages)) outputJSON
     }
 
 renameDefinitionTool :: Tool MCP

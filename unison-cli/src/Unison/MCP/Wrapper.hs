@@ -22,6 +22,7 @@ module Unison.MCP.Wrapper
     MCP.PromptContentType (..),
     errorToolResult,
     textToolResult,
+    textToolResultIsError,
     jsonToolResult,
     handleToolError,
   )
@@ -201,6 +202,20 @@ textToolResult msg =
   MCP.CallToolResult
     { MCP.callToolContent = [MCP.ToolContent MCP.TextualContent $ Just msg],
       MCP.callToolIsError = False
+    }
+
+-- | Like 'textToolResult' but with an explicit @callToolIsError@ flag.
+-- Use this when the tool's payload is structured (e.g. JSON-encoded
+-- 'CliOutput') and the MCP envelope's error flag should reflect a field
+-- inside (typically @not (null errorMessages)@). Without it, the
+-- envelope says success even when UCM reported a failure inside the
+-- payload — callers then can't distinguish "succeeded with chatter"
+-- from "blocked, here's why" without parsing JSON.
+textToolResultIsError :: Bool -> Text -> MCP.CallToolResult
+textToolResultIsError isErr msg =
+  MCP.CallToolResult
+    { MCP.callToolContent = [MCP.ToolContent MCP.TextualContent $ Just msg],
+      MCP.callToolIsError = isErr
     }
 
 jsonToolResult :: (Aeson.ToJSON a) => a -> MCP.CallToolResult
